@@ -26,6 +26,9 @@ export interface EventRecord {
   currency: string;
   status: EventStatus;
   is_currently_active: boolean;
+  seat_selection_open?: boolean;
+  seat_selection_deadline?: string | null;
+  allow_member_seat_changes?: boolean;
 }
 
 export interface Guest {
