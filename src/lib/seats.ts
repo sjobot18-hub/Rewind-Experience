@@ -91,8 +91,14 @@ export async function isPaymentCodeInEvent(supabase: ReturnType<typeof createAdm
 }
 
 export function getSeatTypeFromPosition(rowPosition: number) {
-  if (rowPosition === 1 || rowPosition === 5) return "window";
-  if (rowPosition === 3) return "middle";
+  return rowPosition === 1 || rowPosition === 5 ? "window" : "aisle";
+}
+
+export function normalizeBusSeatType(seatType: string | null | undefined) {
+  const raw = String(seatType ?? "").trim().toLowerCase();
+  if (!raw) return "aisle";
+  if (raw.includes("window")) return "window";
+  if (raw.includes("front passenger")) return "window";
   return "aisle";
 }
 

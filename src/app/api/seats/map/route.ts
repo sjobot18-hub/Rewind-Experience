@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getSeatTypeFromPosition, seatDisplayNameFromAssignment } from "@/lib/seats";
+import { normalizeBusSeatType, seatDisplayNameFromAssignment } from "@/lib/seats";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
@@ -46,6 +46,7 @@ export async function GET(request: Request) {
     const output = (seats ?? []).map((seat: any) => {
       const assignment = assignmentBySeat.get(seat.id);
       const disabled = Boolean(seat.is_disabled);
+      const publicSeatType = normalizeBusSeatType(seat.seat_type);
 
       if (disabled) {
         return {
@@ -53,7 +54,7 @@ export async function GET(request: Request) {
           seat_number: seat.seat_number,
           status: "disabled",
           display_name: "DISABLED",
-          seat_type: getSeatTypeFromPosition(Number(seat.position_in_row ?? 1)),
+          seat_type: publicSeatType,
           row_number: seat.row_number,
           position_in_row: seat.position_in_row,
           is_disabled: true,
@@ -66,7 +67,7 @@ export async function GET(request: Request) {
           seat_number: seat.seat_number,
           status: "available",
           display_name: "AVAILABLE",
-          seat_type: getSeatTypeFromPosition(Number(seat.position_in_row ?? 1)),
+          seat_type: publicSeatType,
           row_number: seat.row_number,
           position_in_row: seat.position_in_row,
           is_disabled: false,
@@ -78,7 +79,7 @@ export async function GET(request: Request) {
         seat_number: seat.seat_number,
         status: assignment.status === "occupied" ? "occupied" : "available",
         display_name: seatDisplayNameFromAssignment(assignment),
-        seat_type: getSeatTypeFromPosition(Number(seat.position_in_row ?? 1)),
+        seat_type: publicSeatType,
         row_number: seat.row_number,
         position_in_row: seat.position_in_row,
         is_disabled: false,

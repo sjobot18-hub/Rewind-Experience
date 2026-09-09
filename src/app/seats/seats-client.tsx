@@ -40,7 +40,7 @@ export default function SeatsClient() {
       setEvent(json.event);
       setSelected(json.selectedSeat ?? null);
       setVerified(true);
-      await loadSeatMap();
+      await loadSeatMap(json.event?.id);
     } catch (e: any) {
       setError("Payment verification failed.");
       setVerified(false);
@@ -49,8 +49,9 @@ export default function SeatsClient() {
     }
   }
 
-  async function loadSeatMap() {
-    const response = await fetch("/api/seats/map", { method: "GET" });
+  async function loadSeatMap(eventId?: string) {
+    const query = typeof eventId === "string" && eventId ? `?event_id=${encodeURIComponent(eventId)}` : "";
+    const response = await fetch(`/api/seats/map${query}`, { method: "GET" });
     const json = await response.json();
     if (json.ok) {
       setMapSeats(json.seats ?? []);
@@ -87,7 +88,7 @@ export default function SeatsClient() {
 
       setSelected(seat);
       setError(null);
-      await loadSeatMap();
+      await loadSeatMap(event?.id);
     } catch (e: any) {
       setError("Seat selection failed.");
     } finally {
@@ -140,7 +141,6 @@ export default function SeatsClient() {
               <div className="legend-strip">
                 <span className="legend-item"><span className="legend-dot window-dot"></span>Window</span>
                 <span className="legend-item"><span className="legend-dot aisle-dot"></span>Aisle</span>
-                <span className="legend-item"><span className="legend-dot middle-dot"></span>Middle</span>
               </div>
 
               <div className="bus-map-wrap">
