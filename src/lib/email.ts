@@ -2,7 +2,7 @@ import "server-only";
 import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const FROM = process.env.EMAIL_FROM || "The Rewind Experience <no-reply@example.com>";
+const FROM = process.env.EMAIL_FROM || "The Rewind Experience <no-reply@markethub.com.ng>";
 
 export async function sendInvitationEmail(opts: {
   to: string;
