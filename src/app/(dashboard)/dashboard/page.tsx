@@ -55,7 +55,7 @@ export default async function DashboardPage() {
         <p className="text-sm text-slate-500">{d.name} {d.year} — {d.presented_by}</p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <StatCard label="Total Expected Income" value={formatNaira(d.total_expected_income)} />
         <StatCard label="Total Money Received" value={formatNaira(d.total_money_received)} tone="green" />
         <StatCard label="Outstanding Payments" value={formatNaira(outstanding)} tone="orange" />
@@ -66,13 +66,13 @@ export default async function DashboardPage() {
         <StatCard label="Total Guests" value={String(d.total_guests)} />
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <StatCard label="Paid Guests" value={String(d.paid_guests)} tone="green" />
         <StatCard label="Part Payment" value={String(d.part_payment_guests)} tone="orange" />
         <StatCard label="Unpaid Guests" value={String(d.unpaid_guests)} tone="red" />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="card">
           <p className="text-xs text-slate-500 mb-1">Male Guests</p>
           <p className="text-lg font-bold text-navy">{d.male_guests}</p>

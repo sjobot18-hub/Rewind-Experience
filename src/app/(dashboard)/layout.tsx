@@ -21,10 +21,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row">
-      <NavClient navItems={navItems} adminName={profile.full_name} isOwner={isOwner} />
+      <NavClient navItems={navItems} adminName={profile.full_name} isOwner={isOwner} activeEvent={activeEvent} />
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="bg-navy text-white px-4 py-3 flex items-center justify-between sticky top-0 z-10">
+        <header className="hidden md:flex bg-navy text-white px-4 py-3 items-center justify-between sticky top-0 z-10">
           <div>
             <p className="text-[10px] uppercase tracking-wide text-gold">Active Event</p>
             <p className="font-semibold text-sm">
@@ -34,7 +34,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <span className="text-xs text-slate-300 hidden sm:block">{profile.full_name}</span>
         </header>
 
-        <main className="flex-1 p-4 md:p-6 pb-24 md:pb-6">{children}</main>
+        <main className="flex-1 p-4 pt-20 md:p-6 pb-28 md:pb-6 md:pt-0">{children}</main>
       </div>
     </div>
   );
