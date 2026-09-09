@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-const busSeats = [
+const staticSeats = [
   "F1", "01","02","03","04","05","06","07","08","09","10",
   "11","12","13","14","15","16","17","18","19","20",
   "21","22","23","24","25","26","27","28","29","30",
@@ -13,10 +13,12 @@ export default function SeatsClient() {
   const [paymentId, setPaymentId] = useState("");
   const [verified, setVerified] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
   const [event, setEvent] = useState<any>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [mapSeats, setMapSeats] = useState<any[]>([]);
 
   async function verifyPayment() {
     setLoading(true);
@@ -33,10 +35,12 @@ export default function SeatsClient() {
         setVerified(false);
         return;
       }
+
       setUser(json.guest);
       setEvent(json.event);
-      setSelected(json.selectedSeat);
+      setSelected(json.selectedSeat ?? null);
       setVerified(true);
+      await loadSeatMap();
     } catch (e: any) {
       setError("Payment verification failed.");
       setVerified(false);
@@ -45,10 +49,39 @@ export default function SeatsClient() {
     }
   }
 
+  async function loadSeatMap() {
+    const response = await fetch("/api/seats/map", { method: "GET" });
+    const json = await response.json();
+    if (json.ok) {
+      setMapSeats(json.seats ?? []);
+    }
+  }
+
   async function confirmSeat(seat: string) {
     setError(null);
-    if (!seat || !user) return;
-    setSelected(seat);
+    if (!seat || !user || !event || !paymentId) return;
+
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/seats/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentId, seat })
+      });
+      const json = await response.json();
+      if (!response.ok || !json.ok) {
+        setError(json.message || "Seat could not be selected.");
+        return;
+      }
+
+      setSelected(seat);
+      setError(null);
+      await loadSeatMap();
+    } catch (e: any) {
+      setError("Seat selection failed.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -65,12 +98,13 @@ export default function SeatsClient() {
             <div className="mb-4">
               <h2 className="text-xl font-bold text-navy">Payment ID verification</h2>
               <p className="text-sm text-slate-500 mt-1">Enter your payment ID to continue.</p>
+              <p className="text-xs text-slate-500 mt-2">You need at least ₦5,000 total valid payment before selecting a seat.</p>
             </div>
             {error && <div className="mb-4 rounded-lg bg-red-50 text-red-700 px-4 py-3 text-sm">{error}</div>}
             <div className="space-y-4">
               <label className="block">
                 <span className="block text-sm font-semibold mb-2">Payment ID</span>
-                <input className="input-field" value={paymentId} onChange={(e) => setPaymentId(e.target.value)} placeholder="PAY-2026-00482" />
+                <input className="input-field" value={paymentId} onChange={(e) => setPaymentId(e.target.value)} placeholder="PAY0004" />
               </label>
               <button className="btn-primary w-full" disabled={loading} onClick={verifyPayment}>
                 {loading ? "Verifying..." : "Verify Payment ID"}
@@ -109,11 +143,18 @@ export default function SeatsClient() {
                     </div>
                     <div className="seat-grid">
                       <button className="seat front-seat" title="F1">F1</button>
-                      {busSeats.filter((s) => s !== "F1").map((seat) => (
-                        <button key={seat} className={seat === selected ? "seat selected-seat" : "seat available-seat"} title={seat} onClick={() => confirmSeat(seat)}>
-                          {seat}
-                        </button>
-                      ))}
+                      {staticSeats.filter((s) => s !== "F1").map((seat) => {
+                        const row = mapSeats.find((s) => s.seat_number === seat);
+                        const state = row?.status ?? "available";
+                        const label = row?.display_name ?? (state === "available" ? "AVAILABLE" : "DISABLED");
+                        const cls = state === "occupied" ? "seat occupied-seat" : state === "disabled" ? "seat disabled-seat" : seat === selected ? "seat selected-seat" : "seat available-seat";
+                        return (
+                          <button key={seat} className={cls} title={seat} onClick={() => confirmSeat(seat)}>
+                            <span className="seat-number">{seat}</span>
+                            <span className="seat-name">{state === "occupied" ? label : state === "disabled" ? "DISABLED" : state === "available" ? "AVAILABLE" : label}</span>
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 </div>
@@ -138,7 +179,7 @@ export default function SeatsClient() {
                   <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">No seat selected</div>
                 )}
 
-                <button className="btn-primary w-full mt-4" onClick={() => confirmSeat(selected || "01")}>Confirm Seat</button>
+                <button className="btn-primary w-full mt-4" disabled={submitting} onClick={() => selected ? confirmSeat(selected) : setError("Choose a seat first.")}>{submitting ? "Confirming..." : "Confirm Seat"}</button>
               </div>
             </aside>
           </div>
@@ -153,10 +194,14 @@ export default function SeatsClient() {
         .bus-title-row { display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 10px; }
         .bus-label { letter-spacing: 0.08em; }
         .seat-grid { display: grid; grid-template-columns: repeat(6, minmax(36px, 1fr)); gap: 8px; align-items: center; justify-items: center; }
-        .seat { width: 38px; height: 38px; border-radius: 10px; font-size: 12px; font-weight: 900; border: 1px solid #94a3b8; background: #fff; color: #102a43; }
+        .seat { width: 50px; min-height: 50px; border-radius: 10px; font-size: 11px; font-weight: 900; border: 1px solid #94a3b8; background: #fff; color: #102a43; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
         .front-seat { background: #e1e7ee; color: #102a43; }
         .available-seat { background: #eefaf5; color: #0f766e; border-color: #94a3b8; }
         .selected-seat { background: #ffbd59; color: #702b00; border: 2px solid #b45309; }
+        .occupied-seat { background: #fff7ed; color: #7c2d12; border-color: #fbbf24; }
+        .disabled-seat { background: #e5e7eb; color: #475569; border-color: #94a3b8; }
+        .seat-number { font-size: 11px; }
+        .seat-name { font-size: 10px; }
       `}</style>
     </main>
   );

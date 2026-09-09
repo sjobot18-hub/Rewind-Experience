@@ -1,24 +1,48 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 
+const SEAT_ELIGIBILITY_THRESHOLD = 5000;
+
+function normalizePaymentReference(input: string) {
+  const cleaned = String(input ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, "");
+
+  if (!cleaned || !cleaned.startsWith("PAY")) {
+    return { code: "", publicId: "" };
+  }
+
+  const code = cleaned.replace(/-/g, "");
+  const publicId = cleaned.startsWith("PAY-") ? cleaned : "";
+  return { code: code.startsWith("PAY") ? code : "", publicId };
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const paymentId = String(body.paymentId ?? "").trim().toUpperCase().replace(/[^A-Z0-9-]/g, "");
+    const reference = normalizePaymentReference(String(body.paymentId ?? ""));
     const seat = String(body.seat ?? "").trim().toUpperCase();
 
-    if (!paymentId.startsWith("PAY-")) {
+    if (!reference.code && !reference.publicId) {
       return NextResponse.json({ ok: false, message: "Invalid payment ID." }, { status: 400 });
     }
 
     const supabase = createAdminClient();
-    const { data: payment, error: paymentError } = await supabase
-      .from("payments")
-      .select("*")
-      .eq("public_payment_id", paymentId)
-      .maybeSingle();
+    const lookup = await (async () => {
+      if (reference.publicId) {
+        const { data, error } = await supabase.from("payments").select("*").eq("public_payment_id", reference.publicId).maybeSingle();
+        if (!error && data) return data;
+      }
+      if (reference.code) {
+        const { data, error } = await supabase.from("payments").select("*").eq("payment_code", reference.code).maybeSingle();
+        if (!error && data) return data;
+      }
+      return null;
+    })();
 
-    if (paymentError || !payment) {
+    const payment = lookup;
+    if (!payment) {
       return NextResponse.json({ ok: false, message: "Payment ID not found." }, { status: 404 });
     }
 
@@ -28,10 +52,22 @@ export async function POST(request: Request) {
 
     const { data: guest } = await supabase.from("guests").select("*").eq("id", payment.guest_id).single();
     const { data: event } = await supabase.from("events").select("*").eq("id", payment.event_id).single();
-    const { data: finance } = await supabase.from("guest_financials").select("*").eq("guest_id", guest.id).eq("event_id", event.id).single();
 
-    if (!guest || !event || !finance || finance.status !== "paid") {
-      return NextResponse.json({ ok: false, message: "Payment is not eligible for seat selection." }, { status: 403 });
+    if (!guest || !event) {
+      return NextResponse.json({ ok: false, message: "Payment record could not be linked to a guest or event." }, { status: 404 });
+    }
+
+    const { data: payments } = await supabase
+      .from("payments")
+      .select("amount, is_voided")
+      .eq("guest_id", guest.id)
+      .eq("event_id", event.id)
+      .eq("is_voided", false);
+
+    const totalPaid = (payments ?? []).reduce((sum: number, row: any) => sum + Number(row.amount ?? 0), 0);
+
+    if (totalPaid < SEAT_ELIGIBILITY_THRESHOLD) {
+      return NextResponse.json({ ok: false, message: `At least ₦5,000 total valid payment is required before seat selection. You have ₦${Math.round(totalPaid)}.`, needsPayment: true, totalPaid }, { status: 403 });
     }
 
     if (!event.seat_selection_open) {
@@ -64,20 +100,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, message: "Seat is unavailable or disabled." }, { status: 409 });
     }
 
-    const { data: existing, error: existingError } = await supabase
+    const { data: existing } = await supabase
       .from("seat_assignments")
       .select("*")
       .eq("event_id", event.id)
       .eq("bus_id", bus.id)
       .eq("seat_id", busSeat.id)
+      .eq("status", "occupied")
       .maybeSingle();
 
     if (existing && existing.guest_id !== guest.id) {
       return NextResponse.json({ ok: false, message: `Seat ${busSeat.seat_number} has just been taken. Please choose another seat.` }, { status: 409 });
     }
 
-    if (existing && existing.guest_id === guest.id) {
-      return NextResponse.json({ ok: false, message: "You already selected that seat." }, { status: 200 });
+    const { data: priorAssignment } = await supabase
+      .from("seat_assignments")
+      .select("*")
+      .eq("event_id", event.id)
+      .eq("guest_id", guest.id)
+      .eq("status", "occupied")
+      .maybeSingle();
+
+    if (priorAssignment && priorAssignment.seat_id !== busSeat.id && !event.allow_member_seat_changes) {
+      return NextResponse.json({ ok: false, message: "Seat changes are not allowed for this event." }, { status: 403 });
     }
 
     const assignmentPayload = {
@@ -92,9 +137,28 @@ export async function POST(request: Request) {
       updated_at: new Date().toISOString(),
     };
 
+    if (priorAssignment) {
+      const { error: updateError } = await supabase
+        .from("seat_assignments")
+        .update({
+          seat_id: busSeat.id,
+          bus_id: bus.id,
+          payment_id: payment.id,
+          status: "occupied",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", priorAssignment.id);
+
+      if (updateError) {
+        return NextResponse.json({ ok: false, message: "Seat could not be changed." }, { status: 409 });
+      }
+
+      return NextResponse.json({ ok: true, seat: busSeat.seat_number, message: "Seat changed." });
+    }
+
     const { data: inserted, error: insertError } = await supabase
       .from("seat_assignments")
-      .upsert(assignmentPayload, { onConflict: "event_id, bus_id, seat_id", ignoreDuplicates: false })
+      .insert(assignmentPayload)
       .select("*")
       .single();
 

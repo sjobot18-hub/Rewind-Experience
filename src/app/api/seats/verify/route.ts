@@ -1,26 +1,53 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 
-function normalizePaymentId(input: string) {
-  const cleaned = input.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "");
-  return cleaned.replace(/^PAY\-?2026\-?/, "PAY-");
+const SEAT_ELIGIBILITY_THRESHOLD = 5000;
+
+function normalizePaymentReference(input: string) {
+  const cleaned = String(input ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, "");
+
+  if (!cleaned || !cleaned.startsWith("PAY")) {
+    return { code: "", publicId: "" };
+  }
+
+  // Accept PAY0004 shown on receipts.
+  const code = cleaned.replace(/-/g, "");
+  const codeLike = code.startsWith("PAY") ? code : "";
+
+  // Also support the existing public Payment ID form on migrations: PAY-2026-00004.
+  const publicId = cleaned.startsWith("PAY-") ? cleaned : "";
+
+  return { code: codeLike, publicId };
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const paymentId = normalizePaymentId(String(body.paymentId ?? ""));
+    const reference = normalizePaymentReference(String(body.paymentId ?? ""));
 
-    if (!paymentId || !paymentId.startsWith("PAY-")) {
+    if (!reference.code && !reference.publicId) {
       return NextResponse.json({ ok: false, message: "Enter a valid Payment ID." }, { status: 400 });
     }
 
     const supabase = createAdminClient();
-    const { data: payment, error: paymentError } = await supabase
+
+    let paymentQuery = supabase
       .from("payments")
       .select("*")
-      .eq("public_payment_id", paymentId)
-      .maybeSingle();
+      .or(`payment_code.eq.${reference.code},public_payment_id.eq.${reference.publicId}`);
+
+    if (!reference.publicId) {
+      paymentQuery = supabase.from("payments").select("*").eq("payment_code", reference.code);
+    }
+
+    if (!reference.code) {
+      paymentQuery = supabase.from("payments").select("*").eq("public_payment_id", reference.publicId);
+    }
+
+    const { data: payment, error: paymentError } = await paymentQuery.maybeSingle();
 
     if (paymentError || !payment) {
       return NextResponse.json({ ok: false, message: "Payment ID not found." }, { status: 404 });
@@ -46,15 +73,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, message: "Payment record could not be linked to a guest or event." }, { status: 404 });
     }
 
-    const { data: finance } = await supabase
-      .from("guest_financials")
-      .select("*")
+    const { data: payments, error: paymentsError } = await supabase
+      .from("payments")
+      .select("amount, is_voided")
       .eq("guest_id", guest.id)
       .eq("event_id", event.id)
-      .single();
+      .eq("is_voided", false);
 
-    if (!finance || finance.status !== "paid") {
-      return NextResponse.json({ ok: false, message: "Payment is not currently fully paid." }, { status: 403 });
+    const totalPaid = (payments ?? []).reduce((sum: number, row: any) => sum + Number(row.amount ?? 0), 0);
+
+    if (paymentsError || totalPaid < SEAT_ELIGIBILITY_THRESHOLD) {
+      return NextResponse.json({
+        ok: false,
+        message: `At least ₦5,000 total valid payment is required before seat selection. You have ₦${Math.round(totalPaid)}.`,
+        needsPayment: true,
+        totalPaid
+      }, { status: 403 });
     }
 
     const { data: assignment } = await supabase
@@ -62,6 +96,7 @@ export async function POST(request: Request) {
       .select("*, bus_seats(*)")
       .eq("guest_id", guest.id)
       .eq("event_id", event.id)
+      .eq("status", "occupied")
       .maybeSingle();
 
     const selectedSeat = assignment?.bus_seats?.seat_number ?? null;
@@ -70,8 +105,10 @@ export async function POST(request: Request) {
       ok: true,
       event: { id: event.id, name: event.name, year: event.year, event_date: event.event_date },
       guest: { id: guest.id, full_name: guest.full_name, guest_code: guest.guest_code },
-      payment: { public_payment_id: payment.public_payment_id, payment_code: payment.payment_code, amount: payment.amount, paid_at: payment.paid_at },
+      payment: { public_payment_id: payment.public_payment_id, payment_code: payment.payment_code },
       selectedSeat,
+      totalPaid,
+      eligible: true,
       seatSelectionOpen: event.seat_selection_open ?? false,
       deadline: event.seat_selection_deadline,
       canChangeSeats: event.allow_member_seat_changes ?? true,
