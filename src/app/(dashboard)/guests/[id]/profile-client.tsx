@@ -169,23 +169,78 @@ export default function GuestProfileClient({
       )}
 
       {receipt && (
-        <div className="card border-2 border-blue print:border-0" id="receipt">
-          <div className="text-center mb-3">
-            <p className="font-bold text-navy">{eventName}</p>
-            <p className="text-xs text-slate-500">Presented by {presentedBy}</p>
+        <section className="card receipt-print-wrap border border-slate-200 shadow-sm rounded-xl" id="receipt">
+          <div className="text-center border-b border-slate-200 pb-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.20em] text-gold">BEACH/APARTMENT HANGOUT</p>
+            <h2 className="text-2xl font-black text-navy mt-2">The Rewind Experience</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 mt-2">Official payment receipt</p>
           </div>
-          <div className="text-sm space-y-1">
-            <p><span className="text-slate-400">Receipt Number:</span> <strong>{receipt.receipt_number}</strong></p>
-            <p><span className="text-slate-400">Guest:</span> {guest.full_name} ({guest.guest_code})</p>
-            <p><span className="text-slate-400">Date:</span> {formatDate(receipt.paid_at)}</p>
-            <p><span className="text-slate-400">Amount Paid:</span> {formatNaira(receipt.amount)}</p>
-            <p><span className="text-slate-400">Method:</span> {receipt.payment_method}</p>
-            <p><span className="text-slate-400">Total Paid To Date:</span> {formatNaira(guest.total_paid + receipt.amount)}</p>
-            <p><span className="text-slate-400">Remaining Balance:</span> {formatNaira(Math.max(guest.ticket_fee - guest.total_paid - receipt.amount, 0))}</p>
-            {receipt.is_overpayment && <p className="text-part font-medium">This payment includes an overpayment.</p>}
+
+          <div className="px-1 py-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 text-sm">
+              <div className="flex justify-between border-b border-dashed border-slate-200 py-2">
+                <span className="text-slate-500">Receipt number</span>
+                <span className="font-semibold text-right text-navy">{receipt.receipt_number}</span>
+              </div>
+              <div className="flex justify-between border-b border-dashed border-slate-200 py-2">
+                <span className="text-slate-500">Payment ID</span>
+                <span className="font-semibold text-right text-navy">{receipt.payment_code}</span>
+              </div>
+              <div className="flex justify-between border-b border-dashed border-slate-200 py-2">
+                <span className="text-slate-500">Date</span>
+                <span className="font-semibold text-right text-navy">{formatDate(receipt.paid_at)}</span>
+              </div>
+              <div className="flex justify-between border-b border-dashed border-slate-200 py-2">
+                <span className="text-slate-500">Guest name</span>
+                <span className="font-semibold text-right text-navy">{guest.full_name}</span>
+              </div>
+              <div className="flex justify-between border-b border-dashed border-slate-200 py-2">
+                <span className="text-slate-500">Guest ID</span>
+                <span className="font-semibold text-right text-navy">{guest.guest_code}</span>
+              </div>
+              <div className="flex justify-between border-b border-dashed border-slate-200 py-2">
+                <span className="text-slate-500">Amount paid</span>
+                <span className="font-semibold text-right text-navy">{formatNaira(receipt.amount)}</span>
+              </div>
+              <div className="flex justify-between border-b border-dashed border-slate-200 py-2">
+                <span className="text-slate-500">Payment method</span>
+                <span className="font-semibold text-right capitalize text-navy">{receipt.payment_method}</span>
+              </div>
+              <div className="flex justify-between border-b border-dashed border-slate-200 py-2">
+                <span className="text-slate-500">Received by</span>
+                <span className="font-semibold text-right text-navy">{receipt.received_by || "Rewind Experience"}</span>
+              </div>
+              <div className="flex justify-between border-b border-dashed border-slate-200 py-2">
+                <span className="text-slate-500">Ticket fee</span>
+                <span className="font-semibold text-right text-navy">{formatNaira(guest.ticket_fee)}</span>
+              </div>
+              <div className="flex justify-between border-b border-dashed border-slate-200 py-2">
+                <span className="text-slate-500">Total paid to date</span>
+                <span className="font-semibold text-right text-navy">{formatNaira(guest.total_paid + receipt.amount)}</span>
+              </div>
+              <div className="flex justify-between border-b border-dashed border-slate-200 py-2">
+                <span className="text-slate-500">Remaining balance</span>
+                <span className="font-semibold text-right text-navy">{formatNaira(Math.max(guest.ticket_fee - guest.total_paid - receipt.amount, 0))}</span>
+              </div>
+              <div className="flex justify-between border-b border-dashed border-slate-200 py-2">
+                <span className="text-slate-500">Status</span>
+                <span className="text-right">
+                  <span className={receipt.is_voided ? "badge-unpaid" : "badge-paid"}>{receipt.is_voided ? "Voided" : "Paid"}</span>
+                </span>
+              </div>
+            </div>
+
+            {receipt.is_overpayment && (
+              <div className="mt-4 rounded-lg bg-orange-50 text-part px-3 py-2 text-xs font-medium">
+                This payment includes an overpayment.
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-end">
+              <button onClick={() => window.print()} className="btn-secondary text-sm px-4 py-2.5">Print Receipt</button>
+            </div>
           </div>
-          <button onClick={() => window.print()} className="btn-secondary w-full mt-3 text-sm">Print Receipt</button>
-        </div>
+        </section>
       )}
 
       <div className="card">

@@ -40,3 +40,44 @@
     @apply bg-red-100 text-unpaid font-semibold text-xs px-2.5 py-1 rounded-full;
   }
 }
+
+@media print {
+  body {
+    background: #ffffff !important;
+  }
+
+  body > nav,
+  body > header,
+  body > main > header,
+  body > aside,
+  body > .md\:hidden,
+  .sidebar,
+  .desktop-sidebar,
+  [class*="sidebar"],
+  [class*="navigation"],
+  #root > nav,
+  #root > aside,
+  #root > header {
+    display: none !important;
+  }
+
+  .receipt-print-wrap {
+    width: min(680px, calc(100vw - 24px)) !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+  }
+
+  .receipt-print-wrap * {
+    color: #102a43 !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 8mm;
+  }
+
+  .receipt-print-wrap {
+    page-break-inside: avoid;
+    min-height: auto !important;
+  }
+}

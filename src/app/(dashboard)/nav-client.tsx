@@ -38,11 +38,15 @@ export default function NavClient({
     router.refresh();
   }
 
-  const frequentNavItems = navItems.slice(0, 5);
+  const frequentNavItems = [
+    { href: "/dashboard", label: "Dashboard" },
+    { href: "/guests", label: "Guests" },
+    { href: "/payments", label: "Payments" },
+    { href: "/expenses", label: "Expenses" },
+  ];
 
   return (
     <>
-      {/* Mobile event header with visible hamburger */}
       <header className="md:hidden fixed top-0 left-0 right-0 z-30 bg-navy text-white px-4 py-3 flex items-center justify-between">
         <div className="min-w-0 pr-4">
           <p className="text-[10px] uppercase tracking-wide text-gold">Active Event</p>
@@ -65,7 +69,6 @@ export default function NavClient({
         </button>
       </header>
 
-      {/* Drawer overlay */}
       {mobileOpen && (
         <button
           type="button"
@@ -75,7 +78,6 @@ export default function NavClient({
         />
       )}
 
-      {/* Desktop sidebar */}
       <nav className="hidden md:flex md:flex-col md:w-56 bg-white border-r border-slate-200 shrink-0">
         <div className="px-5 py-5 border-b border-slate-100">
           <p className="font-bold text-navy leading-tight">Rewind Experience</p>
@@ -99,12 +101,11 @@ export default function NavClient({
         <div className="px-5 py-4 border-t border-slate-100">
           <p className="text-xs text-slate-500 truncate mb-2">{adminName}</p>
           <button onClick={handleLogout} className="text-sm text-unpaid font-medium">
-            Logout
+            Log Out
           </button>
         </div>
       </nav>
 
-      {/* Mobile drawer */}
       <aside
         className={`md:hidden fixed left-0 top-0 bottom-0 z-50 w-[280px] max-w-[85vw] bg-white shadow-2xl transform transition-transform duration-300 ease-in-out ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
@@ -153,21 +154,24 @@ export default function NavClient({
         </div>
       </aside>
 
-      {/* Mobile bottom nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex overflow-x-auto z-20">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex items-center overflow-x-auto z-20">
         {frequentNavItems.map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            className={`flex-1 min-w-[70px] text-center py-2.5 text-[11px] font-medium ${
+            className={`flex-1 min-w-[72px] text-center py-2.5 text-[11px] font-medium ${
               isCurrentPath(pathname, item.href) ? "text-blue" : "text-slate-500"
             }`}
           >
             {item.label}
           </Link>
         ))}
-        <button onClick={handleLogout} className="flex-1 min-w-[70px] text-center py-2.5 text-[11px] font-medium text-unpaid">
-          Log Out
+        <button
+          type="button"
+          onClick={() => setMobileOpen(true)}
+          className="flex-1 min-w-[72px] text-center py-2.5 text-[11px] font-medium text-slate-500"
+        >
+          More
         </button>
       </nav>
     </>
