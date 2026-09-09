@@ -8,21 +8,13 @@ export function normalizePaymentId(input: string) {
     .toUpperCase()
     .replace(/[^A-Z0-9-]/g, "");
 
-  if (!cleaned) return "";
+  if (!cleaned) return { code: "", publicId: "" };
 
-  if (cleaned.startsWith("PAY-2026-")) {
-    return cleaned;
-  }
+  // Accept the receipt-facing payment_code first.
+  const code = cleaned.startsWith("PAY") ? cleaned.replace(/-/g, "") : "";
+  const publicId = cleaned.startsWith("PAY-") ? cleaned : "";
 
-  if (cleaned.startsWith("PAY-")) {
-    return cleaned;
-  }
-
-  if (cleaned.startsWith("PAY")) {
-    return cleaned;
-  }
-
-  return cleaned;
+  return { code, publicId };
 }
 
 export function normalizeReceiptCode(input: string) {
@@ -31,39 +23,46 @@ export function normalizeReceiptCode(input: string) {
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "");
 
-  return cleaned.startsWith("PAY") ? cleaned : "";
+  return cleaned.startsWith("PAY") ? cleaned.replace(/-/g, "") : "";
 }
 
 export async function findPaymentByPublicOrReceiptIdentifier(supabase: ReturnType<typeof createAdminClient>, rawIdentifier: string) {
-  const identifier = normalizePaymentId(rawIdentifier);
-  const code = normalizeReceiptCode(identifier);
+  const reference = normalizePaymentId(rawIdentifier);
+  const code = normalizeReceiptCode(reference.code || rawIdentifier);
 
-  if (!identifier || (!identifier.startsWith("PAY") && !code)) {
+  if (!reference.code && !reference.publicId) {
     return null;
   }
 
-  const lookupRows = await supabase
+  const query = supabase
     .from("payments")
-    .select("*, guests:guest_id(full_name, guest_code, id), events:event_id(name, year, id, seat_selection_open, seat_selection_deadline, allow_member_seat_changes)")
-    .or(`payment_code.eq.${code},public_payment_id.eq.${identifier}`)
-    .maybeSingle();
+    .select("*, guests:guest_id(full_name, guest_code, id), events:event_id(name, year, id, seat_selection_open, seat_selection_deadline, allow_member_seat_changes)");
 
-  if (lookupRows.error || !lookupRows.data) {
-    // fallback to payment_code by stripping the extra public prefix if the same receipt is posted as PAY0004
+  let paymentQuery = query;
+  if (reference.publicId) {
+    paymentQuery = paymentQuery.eq("public_payment_id", reference.publicId);
+  } else if (code) {
+    paymentQuery = paymentQuery.eq("payment_code", code);
+  }
+
+  const lookupRows = await paymentQuery.maybeSingle();
+  if (!lookupRows.error && lookupRows.data) {
+    return lookupRows.data;
+  }
+
+  if (code) {
     const fallback = await supabase
       .from("payments")
       .select("*, guests:guest_id(full_name, guest_code, id), events:event_id(name, year, id, seat_selection_open, seat_selection_deadline, allow_member_seat_changes)")
       .eq("payment_code", code)
       .maybeSingle();
 
-    if (fallback.error || !fallback.data) {
-      return null;
+    if (!fallback.error && fallback.data) {
+      return fallback.data;
     }
-
-    return fallback.data;
   }
 
-  return lookupRows.data;
+  return null;
 }
 
 export async function calculateTotalValidPaymentsForGuestEvent(
@@ -89,4 +88,15 @@ export async function calculateTotalValidPaymentsForGuestEvent(
 export async function isPaymentCodeInEvent(supabase: ReturnType<typeof createAdminClient>, paymentCode: string) {
   const { data, error } = await supabase.from("payments").select("*").eq("payment_code", paymentCode).maybeSingle();
   return { data, error };
+}
+
+export function getSeatTypeFromPosition(rowPosition: number) {
+  if (rowPosition === 1 || rowPosition === 5) return "window";
+  if (rowPosition === 3) return "middle";
+  return "aisle";
+}
+
+export function seatDisplayNameFromAssignment(assignment: any) {
+  if (!assignment?.guests?.full_name) return "Member";
+  return assignment.guests.full_name.trim().split(/\s+/)[0] || "Member";
 }

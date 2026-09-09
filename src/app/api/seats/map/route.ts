@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getSeatTypeFromPosition, seatDisplayNameFromAssignment } from "@/lib/seats";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
@@ -21,7 +22,8 @@ export async function GET(request: Request) {
       .from("bus_seats")
       .select("*")
       .eq("bus_id", bus.id)
-      .order("seat_number");
+      .order("row_number", { ascending: true })
+      .order("position_in_row", { ascending: true });
 
     if (seatError) {
       return NextResponse.json({ ok: false, message: "Unable to load bus seats." }, { status: 500 });
@@ -36,7 +38,9 @@ export async function GET(request: Request) {
 
     const assignmentBySeat = new Map<string, any>();
     for (const row of assignments ?? []) {
-      assignmentBySeat.set(row.seat_id, row);
+      if (row.status === "occupied") {
+        assignmentBySeat.set(row.seat_id, row);
+      }
     }
 
     const output = (seats ?? []).map((seat: any) => {
@@ -44,19 +48,40 @@ export async function GET(request: Request) {
       const disabled = Boolean(seat.is_disabled);
 
       if (disabled) {
-        return { seat_id: seat.id, seat_number: seat.seat_number, status: "disabled", display_name: "DISABLED" };
+        return {
+          seat_id: seat.id,
+          seat_number: seat.seat_number,
+          status: "disabled",
+          display_name: "DISABLED",
+          seat_type: getSeatTypeFromPosition(Number(seat.position_in_row ?? 1)),
+          row_number: seat.row_number,
+          position_in_row: seat.position_in_row,
+          is_disabled: true,
+        };
       }
 
-      if (!assignment || assignment.status === "released") {
-        return { seat_id: seat.id, seat_number: seat.seat_number, status: "available", display_name: "AVAILABLE" };
+      if (!assignment) {
+        return {
+          seat_id: seat.id,
+          seat_number: seat.seat_number,
+          status: "available",
+          display_name: "AVAILABLE",
+          seat_type: getSeatTypeFromPosition(Number(seat.position_in_row ?? 1)),
+          row_number: seat.row_number,
+          position_in_row: seat.position_in_row,
+          is_disabled: false,
+        };
       }
 
-      const firstName = assignment.guests?.full_name?.trim().split(/\s+/)[0] || "Member";
       return {
         seat_id: seat.id,
         seat_number: seat.seat_number,
-        status: assignment.status === "occupied" ? "occupied" : "released",
-        display_name: firstName,
+        status: assignment.status === "occupied" ? "occupied" : "available",
+        display_name: seatDisplayNameFromAssignment(assignment),
+        seat_type: getSeatTypeFromPosition(Number(seat.position_in_row ?? 1)),
+        row_number: seat.row_number,
+        position_in_row: seat.position_in_row,
+        is_disabled: false,
       };
     });
 

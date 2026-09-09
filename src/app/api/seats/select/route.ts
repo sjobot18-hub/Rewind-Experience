@@ -1,27 +1,11 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { normalizePaymentId, SEAT_ELIGIBILITY_THRESHOLD } from "@/lib/seats";
 import { NextResponse } from "next/server";
-
-const SEAT_ELIGIBILITY_THRESHOLD = 5000;
-
-function normalizePaymentReference(input: string) {
-  const cleaned = String(input ?? "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9-]/g, "");
-
-  if (!cleaned || !cleaned.startsWith("PAY")) {
-    return { code: "", publicId: "" };
-  }
-
-  const code = cleaned.replace(/-/g, "");
-  const publicId = cleaned.startsWith("PAY-") ? cleaned : "";
-  return { code: code.startsWith("PAY") ? code : "", publicId };
-}
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const reference = normalizePaymentReference(String(body.paymentId ?? ""));
+    const reference = normalizePaymentId(String(body.paymentId ?? ""));
     const seat = String(body.seat ?? "").trim().toUpperCase();
 
     if (!reference.code && !reference.publicId) {
@@ -29,20 +13,17 @@ export async function POST(request: Request) {
     }
 
     const supabase = createAdminClient();
-    const lookup = await (async () => {
-      if (reference.publicId) {
-        const { data, error } = await supabase.from("payments").select("*").eq("public_payment_id", reference.publicId).maybeSingle();
-        if (!error && data) return data;
-      }
-      if (reference.code) {
-        const { data, error } = await supabase.from("payments").select("*").eq("payment_code", reference.code).maybeSingle();
-        if (!error && data) return data;
-      }
-      return null;
-    })();
 
-    const payment = lookup;
-    if (!payment) {
+    let paymentQuery = supabase.from("payments").select("*, guests:guest_id(*), events:event_id(*)");
+    if (reference.publicId) {
+      paymentQuery = paymentQuery.eq("public_payment_id", reference.publicId);
+    } else {
+      paymentQuery = paymentQuery.eq("payment_code", reference.code);
+    }
+
+    const { data: payment, error: paymentError } = await paymentQuery.maybeSingle();
+
+    if (paymentError || !payment) {
       return NextResponse.json({ ok: false, message: "Payment ID not found." }, { status: 404 });
     }
 
@@ -50,14 +31,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, message: "That payment is no longer valid." }, { status: 403 });
     }
 
-    const { data: guest } = await supabase.from("guests").select("*").eq("id", payment.guest_id).single();
-    const { data: event } = await supabase.from("events").select("*").eq("id", payment.event_id).single();
+    const guest = payment.guests;
+    const event = payment.events;
 
     if (!guest || !event) {
       return NextResponse.json({ ok: false, message: "Payment record could not be linked to a guest or event." }, { status: 404 });
     }
 
-    const { data: payments } = await supabase
+    const { data: payments, error: paymentsError } = await supabase
       .from("payments")
       .select("amount, is_voided")
       .eq("guest_id", guest.id)
@@ -66,7 +47,7 @@ export async function POST(request: Request) {
 
     const totalPaid = (payments ?? []).reduce((sum: number, row: any) => sum + Number(row.amount ?? 0), 0);
 
-    if (totalPaid < SEAT_ELIGIBILITY_THRESHOLD) {
+    if (paymentsError || totalPaid < SEAT_ELIGIBILITY_THRESHOLD) {
       return NextResponse.json({ ok: false, message: `At least ₦5,000 total valid payment is required before seat selection. You have ₦${Math.round(totalPaid)}.`, needsPayment: true, totalPaid }, { status: 403 });
     }
 

@@ -13,6 +13,7 @@ export const ALL_PERMISSIONS = [
   "manage_reports",
   "export_data",
   "manage_event_settings",
+  "manage_seats",
   "create_events",
   "manage_administrators",
   "invite_administrators",
@@ -32,6 +33,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   manage_reports: "Manage Reports",
   export_data: "Export Data",
   manage_event_settings: "Manage Event Settings",
+  manage_seats: "Manage Seats",
   create_events: "Create Events",
   manage_administrators: "Manage Administrators",
   invite_administrators: "Invite Administrators",
@@ -50,8 +52,9 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, Permission[]> = {
     "view_finance",
     "manage_reports",
     "export_data",
+    "manage_seats",
   ],
-  event_admin: ["view_dashboard", "manage_guests", "manage_event_settings", "manage_reports"],
+  event_admin: ["view_dashboard", "manage_guests", "manage_event_settings", "manage_reports", "manage_seats"],
   custom_admin: ["view_dashboard"],
 };
 

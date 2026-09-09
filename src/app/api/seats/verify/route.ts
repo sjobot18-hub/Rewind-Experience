@@ -1,32 +1,11 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { normalizePaymentId, SEAT_ELIGIBILITY_THRESHOLD } from "@/lib/seats";
 import { NextResponse } from "next/server";
-
-const SEAT_ELIGIBILITY_THRESHOLD = 5000;
-
-function normalizePaymentReference(input: string) {
-  const cleaned = String(input ?? "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9-]/g, "");
-
-  if (!cleaned || !cleaned.startsWith("PAY")) {
-    return { code: "", publicId: "" };
-  }
-
-  // Accept PAY0004 shown on receipts.
-  const code = cleaned.replace(/-/g, "");
-  const codeLike = code.startsWith("PAY") ? code : "";
-
-  // Also support the existing public Payment ID form on migrations: PAY-2026-00004.
-  const publicId = cleaned.startsWith("PAY-") ? cleaned : "";
-
-  return { code: codeLike, publicId };
-}
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const reference = normalizePaymentReference(String(body.paymentId ?? ""));
+    const reference = normalizePaymentId(String(body.paymentId ?? ""));
 
     if (!reference.code && !reference.publicId) {
       return NextResponse.json({ ok: false, message: "Enter a valid Payment ID." }, { status: 400 });
@@ -36,15 +15,12 @@ export async function POST(request: Request) {
 
     let paymentQuery = supabase
       .from("payments")
-      .select("*")
-      .or(`payment_code.eq.${reference.code},public_payment_id.eq.${reference.publicId}`);
+      .select("*, guests:guest_id(full_name, guest_code, id), events:event_id(name, year, id, seat_selection_open, seat_selection_deadline, allow_member_seat_changes)");
 
-    if (!reference.publicId) {
-      paymentQuery = supabase.from("payments").select("*").eq("payment_code", reference.code);
-    }
-
-    if (!reference.code) {
-      paymentQuery = supabase.from("payments").select("*").eq("public_payment_id", reference.publicId);
+    if (reference.publicId) {
+      paymentQuery = paymentQuery.eq("public_payment_id", reference.publicId);
+    } else {
+      paymentQuery = paymentQuery.eq("payment_code", reference.code);
     }
 
     const { data: payment, error: paymentError } = await paymentQuery.maybeSingle();
@@ -57,17 +33,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, message: "That Payment ID is no longer valid." }, { status: 403 });
     }
 
-    const { data: guest } = await supabase
-      .from("guests")
-      .select("*")
-      .eq("id", payment.guest_id)
-      .single();
-
-    const { data: event } = await supabase
-      .from("events")
-      .select("*")
-      .eq("id", payment.event_id)
-      .single();
+    const guest = payment.guests;
+    const event = payment.events;
 
     if (!guest || !event) {
       return NextResponse.json({ ok: false, message: "Payment record could not be linked to a guest or event." }, { status: 404 });
@@ -104,7 +71,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       event: { id: event.id, name: event.name, year: event.year, event_date: event.event_date },
-      guest: { id: guest.id, full_name: guest.full_name, guest_code: guest.guest_code },
+      guest: { full_name: guest.full_name },
       payment: { public_payment_id: payment.public_payment_id, payment_code: payment.payment_code },
       selectedSeat,
       totalPaid,
