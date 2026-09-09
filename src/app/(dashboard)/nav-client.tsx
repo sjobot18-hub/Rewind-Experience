@@ -47,10 +47,10 @@ export default function NavClient({
 
   return (
     <>
-      <header className="md:hidden fixed top-0 left-0 right-0 z-30 bg-navy text-white px-4 py-3 flex items-center justify-between">
-        <div className="min-w-0 pr-4">
-          <p className="text-[10px] uppercase tracking-wide text-gold">Active Event</p>
-          <p className="font-semibold text-sm truncate">
+      <header className="md:hidden fixed top-0 left-0 right-0 z-30 bg-navy text-white px-4 py-2 flex items-center justify-between">
+        <div className="min-w-0 pr-3">
+          <p className="text-[9px] uppercase tracking-[0.16em] text-gold">Active Event</p>
+          <p className="font-semibold text-[13px] leading-tight truncate">
             {activeEvent ? `${activeEvent.name} ${activeEvent.year}` : "No active event"}
           </p>
         </div>
@@ -59,12 +59,12 @@ export default function NavClient({
           aria-label="Open navigation menu"
           aria-expanded={mobileOpen}
           onClick={() => setMobileOpen(true)}
-          className="shrink-0 inline-flex h-11 w-11 items-center justify-center rounded-lg border border-white/40 bg-white/10 text-white hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-gold"
+          className="shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-md text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-gold"
         >
-          <span className="flex flex-col gap-1.5">
-            <span className="block h-0.5 w-5 bg-current rounded" />
-            <span className="block h-0.5 w-5 bg-current rounded" />
-            <span className="block h-0.5 w-5 bg-current rounded" />
+          <span className="flex flex-col gap-1">
+            <span className="block h-0.5 w-4 bg-current rounded" />
+            <span className="block h-0.5 w-4 bg-current rounded" />
+            <span className="block h-0.5 w-4 bg-current rounded" />
           </span>
         </button>
       </header>
@@ -159,7 +159,7 @@ export default function NavClient({
           <Link
             key={item.href}
             href={item.href}
-            className={`flex-1 min-w-[72px] text-center py-2.5 text-[11px] font-medium ${
+            className={`flex-1 min-w-[72px] text-center py-2 text-[11px] font-medium ${
               isCurrentPath(pathname, item.href) ? "text-blue" : "text-slate-500"
             }`}
           >
@@ -169,7 +169,7 @@ export default function NavClient({
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
-          className="flex-1 min-w-[72px] text-center py-2.5 text-[11px] font-medium text-slate-500"
+          className="flex-1 min-w-[72px] text-center py-2 text-[11px] font-medium text-slate-500"
         >
           More
         </button>

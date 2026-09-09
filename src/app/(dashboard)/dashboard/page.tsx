@@ -13,9 +13,9 @@ function StatCard({ label, value, tone }: { label: string; value: string; tone?:
   }[tone ?? "default"];
 
   return (
-    <div className="card min-w-0">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">{label}</p>
-      <p className={`text-2xl font-bold leading-tight break-words ${toneClass}`}>{value}</p>
+    <div className="card min-w-0 px-4 py-3">
+      <p className="text-[13px] font-semibold uppercase tracking-wide text-slate-500 mb-1">{label}</p>
+      <p className={`text-[30px] md:text-[34px] font-bold leading-none break-words ${toneClass}`}>{value}</p>
     </div>
   );
 }
@@ -50,35 +50,19 @@ export default async function DashboardPage() {
     : "0.0";
 
   return (
-    <div className="space-y-6">
-      <section className="card">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-gold">The Rewind Experience</p>
-            <h1 className="text-2xl md:text-3xl font-bold text-navy mt-1">{activeEvent.name}</h1>
-            <p className="text-sm text-slate-500">{activeEvent.name} · {activeEvent.year}</p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Presented by</p>
-            <p className="text-sm font-bold text-navy">{d.presented_by}</p>
-          </div>
-        </div>
+    <div className="space-y-5 dashboard-mobile">
+      <section className="space-y-1">
+        <h1 className="text-[28px] md:text-[32px] font-bold leading-tight text-navy">Dashboard</h1>
+        <p className="text-[15px] md:text-[16px] text-slate-500 leading-tight">Live figures for {d.name}</p>
       </section>
 
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-2xl font-bold text-navy">Dashboard</h2>
-          <p className="text-sm text-slate-500">Live figures for {d.name}</p>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Link href="/guests" className="btn-primary text-sm px-4 py-2.5">Add guest</Link>
-          <Link href="/payments" className="btn-primary text-sm px-4 py-2.5">Payment</Link>
-          <Link href="/expenses" className="btn-primary text-sm px-4 py-2.5">Expense</Link>
-        </div>
+      <section className="grid grid-cols-3 gap-2">
+        <Link href="/guests" className="btn-primary text-[13px] font-semibold px-2 py-2 h-11 flex items-center justify-center">Add guest</Link>
+        <Link href="/payments" className="btn-primary text-[13px] font-semibold px-2 py-2 h-11 flex items-center justify-center">Payment</Link>
+        <Link href="/expenses" className="btn-primary text-[13px] font-semibold px-2 py-2 h-11 flex items-center justify-center">Expense</Link>
       </section>
 
-      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total Expected Income" value={formatNaira(d.total_expected_income)} />
         <StatCard label="Total Money Received" value={formatNaira(d.total_money_received)} tone="green" />
         <StatCard label="Outstanding Payments" value={formatNaira(outstanding)} tone="red" />
@@ -96,15 +80,15 @@ export default async function DashboardPage() {
       </section>
 
       <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="card">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Male Guests</p>
-          <p className="text-2xl font-bold text-navy">{d.male_guests}</p>
-          <p className="text-xs text-slate-400">{formatNaira(d.male_ticket_revenue)} revenue</p>
+        <div className="card px-4 py-3">
+          <p className="text-[13px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Male Guests</p>
+          <p className="text-[30px] font-bold leading-none text-navy">{d.male_guests}</p>
+          <p className="text-[13px] text-slate-400 mt-1">{formatNaira(d.male_ticket_revenue)} revenue</p>
         </div>
-        <div className="card">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Female Guests</p>
-          <p className="text-2xl font-bold text-navy">{d.female_guests}</p>
-          <p className="text-xs text-slate-400">{formatNaira(d.female_ticket_revenue)} revenue</p>
+        <div className="card px-4 py-3">
+          <p className="text-[13px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Female Guests</p>
+          <p className="text-[30px] font-bold leading-none text-navy">{d.female_guests}</p>
+          <p className="text-[13px] text-slate-400 mt-1">{formatNaira(d.female_ticket_revenue)} revenue</p>
         </div>
       </section>
     </div>
