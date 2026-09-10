@@ -1,100 +1,465 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { normalizePaymentId, SEAT_ELIGIBILITY_THRESHOLD, getPermanentBigCostaBus } from "@/lib/seats";
+import {
+  normalizePaymentId,
+  SEAT_ELIGIBILITY_THRESHOLD,
+  getPermanentBigCostaBus,
+} from "@/lib/seats";
 import { NextResponse } from "next/server";
 
-export async function POST(request: Request) {
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+function jsonResponse(
+  data: Record<string, any>,
+  status = 200
+) {
+  return NextResponse.json(data, {
+    status,
+    headers: {
+      "Cache-Control":
+        "no-store, no-cache, must-revalidate, proxy-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+    },
+  });
+}
+
+export async function POST(
+  request: Request
+) {
   try {
-    const body = await request.json();
-    const reference = normalizePaymentId(String(body.paymentId ?? ""));
-    const seat = String(body.seat ?? "").trim().toUpperCase();
+    const body =
+      await request.json();
+
+    const reference =
+      normalizePaymentId(
+        String(
+          body.paymentId ??
+            ""
+        )
+      );
+
+    const seat = String(
+      body.seat ?? ""
+    )
+      .trim()
+      .toUpperCase();
 
     if (!reference.publicId) {
-      return NextResponse.json({ ok: false, message: "Invalid payment ID." }, { status: 400 });
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Invalid payment ID.",
+        },
+        400
+      );
     }
 
-    const supabase = createAdminClient();
+    if (!seat) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Please choose a seat.",
+        },
+        400
+      );
+    }
 
-    const { data: payment, error: paymentError } = await supabase
+    const supabase =
+      createAdminClient();
+
+    /*
+     * Verify the public payment credential.
+     */
+    const {
+      data: payment,
+      error: paymentError,
+    } = await supabase
       .from("payments")
-      .select("*, guests:guest_id(*), events:event_id(*)")
-      .eq("public_payment_id", reference.publicId)
+      .select(
+        "*, guests:guest_id(*), events:event_id(*)"
+      )
+      .eq(
+        "public_payment_id",
+        reference.publicId
+      )
       .maybeSingle();
 
-    if (paymentError || !payment) {
-      return NextResponse.json({ ok: false, message: "Payment ID not found." }, { status: 404 });
+    if (
+      paymentError ||
+      !payment
+    ) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Payment ID not found.",
+        },
+        404
+      );
     }
 
     if (payment.is_voided) {
-      return NextResponse.json({ ok: false, message: "That payment is no longer valid." }, { status: 403 });
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "That payment is no longer valid.",
+        },
+        403
+      );
     }
 
-    const guest = payment.guests;
-    const event = payment.events;
+    const guest =
+      payment.guests;
 
-    if (!guest || !event) {
-      return NextResponse.json({ ok: false, message: "Payment record could not be linked to a guest or event." }, { status: 404 });
+    const event =
+      payment.events;
+
+    if (
+      !guest ||
+      !event
+    ) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Payment record could not be linked to a guest or event.",
+        },
+        404
+      );
     }
 
-    const { data: payments, error: paymentsError } = await supabase
+    /*
+     * Calculate total valid payment for this
+     * guest in this event.
+     */
+    const {
+      data: payments,
+      error: paymentsError,
+    } = await supabase
       .from("payments")
-      .select("amount, is_voided")
-      .eq("guest_id", guest.id)
-      .eq("event_id", event.id)
-      .eq("is_voided", false);
+      .select(
+        "amount, is_voided"
+      )
+      .eq(
+        "guest_id",
+        guest.id
+      )
+      .eq(
+        "event_id",
+        event.id
+      )
+      .eq(
+        "is_voided",
+        false
+      );
 
-    const totalPaid = (payments ?? []).reduce((sum: number, row: any) => sum + Number(row.amount ?? 0), 0);
-
-    if (paymentsError || totalPaid < SEAT_ELIGIBILITY_THRESHOLD) {
-      return NextResponse.json({ ok: false, message: `At least ₦5,000 total valid payment is required before seat selection. You have ₦${Math.round(totalPaid)}.`, needsPayment: true, totalPaid }, { status: 403 });
+    if (paymentsError) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Unable to verify payment eligibility.",
+        },
+        500
+      );
     }
 
-    if (!event.seat_selection_open) {
-      return NextResponse.json({ ok: false, message: "Seat selection is currently closed." }, { status: 403 });
+    const totalPaid =
+      (payments ?? [])
+        .reduce(
+          (
+            sum: number,
+            row: any
+          ) =>
+            sum +
+            Number(
+              row?.amount ?? 0
+            ),
+          0
+        );
+
+    if (
+      totalPaid <
+      SEAT_ELIGIBILITY_THRESHOLD
+    ) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            `At least ₦5,000 total valid payment is required before seat selection. You have ₦${Math.round(
+              totalPaid
+            )}.`,
+          needsPayment: true,
+          totalPaid,
+        },
+        403
+      );
     }
 
-    if (event.seat_selection_deadline && new Date(event.seat_selection_deadline) < new Date()) {
-      return NextResponse.json({ ok: false, message: "Seat selection deadline has passed." }, { status: 403 });
+    /*
+     * SEAT SELECTION MUST ACTUALLY BE OPEN.
+     *
+     * This reads directly from the database.
+     * The admin Open button now persists this value.
+     */
+    if (
+      !event.seat_selection_open
+    ) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Seat selection is currently closed.",
+        },
+        403
+      );
     }
 
-    const bus = await getPermanentBigCostaBus(supabase);
+    /*
+     * Enforce the configured deadline.
+     */
+    if (
+      event.seat_selection_deadline
+    ) {
+      const deadline =
+        new Date(
+          event.seat_selection_deadline
+        );
+
+      if (
+        !Number.isNaN(
+          deadline.getTime()
+        ) &&
+        deadline.getTime() <
+          Date.now()
+      ) {
+        return jsonResponse(
+          {
+            ok: false,
+            message:
+              "Seat selection deadline has passed.",
+          },
+          403
+        );
+      }
+    }
+
+    /*
+     * Resolve the permanent physical Big Costa bus.
+     *
+     * This is the critical part of the permanent
+     * seat architecture.
+     */
+    const bus =
+      await getPermanentBigCostaBus(
+        supabase
+      );
+
     if (!bus) {
-      return NextResponse.json({ ok: false, message: "Big Costa bus not configured for the permanent seat map." }, { status: 404 });
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Big Costa bus not configured for the permanent seat map.",
+        },
+        404
+      );
     }
 
-    const { data: busSeat, error: seatError } = await supabase
+    /*
+     * Find the requested seat ONLY inside
+     * the permanent Big Costa bus.
+     */
+    const {
+      data: busSeat,
+      error: seatError,
+    } = await supabase
       .from("bus_seats")
       .select("*")
-      .eq("bus_id", bus.id)
-      .eq("seat_number", seat)
+      .eq(
+        "bus_id",
+        bus.id
+      )
+      .eq(
+        "seat_number",
+        seat
+      )
       .maybeSingle();
 
-    if (seatError || !busSeat || busSeat.is_disabled) {
-      return NextResponse.json({ ok: false, message: "Seat is unavailable or disabled." }, { status: 409 });
+    if (
+      seatError ||
+      !busSeat
+    ) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Seat is unavailable or does not exist.",
+        },
+        409
+      );
     }
 
-    const { data: existing } = await supabase
+    if (busSeat.is_disabled) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            `Seat ${busSeat.seat_number} is disabled.`,
+        },
+        409
+      );
+    }
+
+    /*
+     * Check whether this seat is already occupied
+     * by another member on the permanent bus.
+     */
+    const {
+      data: existingSeatAssignment,
+      error:
+        existingSeatError,
+    } = await supabase
       .from("seat_assignments")
       .select("*")
-      .eq("bus_id", bus.id)
-      .eq("seat_id", busSeat.id)
-      .eq("status", "occupied")
+      .eq(
+        "bus_id",
+        bus.id
+      )
+      .eq(
+        "seat_id",
+        busSeat.id
+      )
+      .eq(
+        "status",
+        "occupied"
+      )
+      .order(
+        "updated_at",
+        {
+          ascending: false,
+        }
+      )
+      .limit(1)
       .maybeSingle();
 
-    if (existing && existing.guest_id !== guest.id) {
-      return NextResponse.json({ ok: false, message: `Seat ${busSeat.seat_number} has just been taken. Please choose another seat.` }, { status: 409 });
+    if (existingSeatError) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Unable to check seat availability.",
+        },
+        500
+      );
     }
 
-    const { data: priorAssignment } = await supabase
+    if (
+      existingSeatAssignment &&
+      existingSeatAssignment.guest_id !==
+        guest.id
+    ) {
+      return jsonResponse(
+        {
+          ok: false,
+          message: `Seat ${busSeat.seat_number} has just been taken. Please choose another seat.`,
+        },
+        409
+      );
+    }
+
+    /*
+     * Find this guest's current occupied seat
+     * on the permanent Big Costa bus.
+     */
+    const {
+      data: priorAssignment,
+      error:
+        priorAssignmentError,
+    } = await supabase
       .from("seat_assignments")
       .select("*")
-      .eq("guest_id", guest.id)
-      .eq("status", "occupied")
+      .eq(
+        "guest_id",
+        guest.id
+      )
+      .eq(
+        "bus_id",
+        bus.id
+      )
+      .eq(
+        "status",
+        "occupied"
+      )
+      .order(
+        "updated_at",
+        {
+          ascending: false,
+        }
+      )
+      .limit(1)
       .maybeSingle();
 
-    if (priorAssignment && priorAssignment.seat_id !== busSeat.id && !event.allow_member_seat_changes) {
-      return NextResponse.json({ ok: false, message: "Seat changes are not allowed for this event." }, { status: 403 });
+    if (priorAssignmentError) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Unable to check your current seat assignment.",
+        },
+        500
+      );
     }
 
+    /*
+     * If the member already has this exact seat,
+     * there is nothing else to change.
+     */
+    if (
+      priorAssignment &&
+      priorAssignment.seat_id ===
+        busSeat.id
+    ) {
+      return jsonResponse({
+        ok: true,
+        seat:
+          busSeat.seat_number,
+        message:
+          "That seat is already assigned to you.",
+      });
+    }
+
+    /*
+     * If the member already has a different seat,
+     * respect the event's seat-change setting.
+     */
+    if (
+      priorAssignment &&
+      priorAssignment.seat_id !==
+        busSeat.id &&
+      !event.allow_member_seat_changes
+    ) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Seat changes are not allowed for this event.",
+        },
+        403
+      );
+    }
+
+    const now =
+      new Date().toISOString();
+
+    /*
+     * Keep the current event on the assignment,
+     * while the physical bus and seat remain permanent.
+     */
     const assignmentPayload = {
       event_id: event.id,
       bus_id: bus.id,
@@ -103,41 +468,100 @@ export async function POST(request: Request) {
       payment_id: payment.id,
       status: "occupied",
       assigned_by: null,
-      assigned_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      assigned_at: now,
+      updated_at: now,
     };
 
+    /*
+     * CHANGE AN EXISTING SEAT
+     */
     if (priorAssignment) {
-      const { error: updateError } = await supabase
+      const {
+        error: updateError,
+      } = await supabase
         .from("seat_assignments")
         .update({
+          event_id: event.id,
           seat_id: busSeat.id,
           bus_id: bus.id,
           payment_id: payment.id,
           status: "occupied",
-          updated_at: new Date().toISOString(),
+          updated_at: now,
         })
-        .eq("id", priorAssignment.id);
+        .eq(
+          "id",
+          priorAssignment.id
+        )
+        .eq(
+          "bus_id",
+          bus.id
+        );
 
       if (updateError) {
-        return NextResponse.json({ ok: false, message: "Seat could not be changed." }, { status: 409 });
+        return jsonResponse(
+          {
+            ok: false,
+            message:
+              "Seat could not be changed.",
+          },
+          409
+        );
       }
 
-      return NextResponse.json({ ok: true, seat: busSeat.seat_number, message: "Seat changed." });
+      return jsonResponse({
+        ok: true,
+        seat:
+          busSeat.seat_number,
+        message:
+          "Seat changed.",
+      });
     }
 
-    const { data: inserted, error: insertError } = await supabase
+    /*
+     * CREATE A NEW SEAT ASSIGNMENT
+     */
+    const {
+      data: inserted,
+      error: insertError,
+    } = await supabase
       .from("seat_assignments")
-      .insert(assignmentPayload)
+      .insert(
+        assignmentPayload
+      )
       .select("*")
       .single();
 
-    if (insertError || !inserted) {
-      return NextResponse.json({ ok: false, message: "Seat could not be assigned." }, { status: 409 });
+    if (
+      insertError ||
+      !inserted
+    ) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            insertError?.message ??
+            "Seat could not be assigned.",
+        },
+        409
+      );
     }
 
-    return NextResponse.json({ ok: true, seat: busSeat.seat_number, message: "Seat confirmed." });
+    return jsonResponse({
+      ok: true,
+      seat:
+        busSeat.seat_number,
+      message:
+        "Seat confirmed.",
+    });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, message: error.message ?? "Seat selection failed." }, { status: 500 });
+    return jsonResponse(
+      {
+        ok: false,
+        message:
+          error?.message ??
+          "Seat selection failed.",
+      },
+      500
+    );
   }
 }

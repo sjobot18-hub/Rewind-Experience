@@ -1,112 +1,416 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { normalizePaymentId, SEAT_ELIGIBILITY_THRESHOLD } from "@/lib/seats";
+import {
+  normalizePaymentId,
+  SEAT_ELIGIBILITY_THRESHOLD,
+  getPermanentBigCostaBus,
+} from "@/lib/seats";
 import { NextResponse } from "next/server";
 
-const FAILED_ATTEMPT_BUCKET = new Map<string, { count: number; resetAt: number }>();
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-function getClientIp(request: Request) {
-  const forwarded = request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? "";
-  return forwarded.split(",")[0]?.trim() || "local";
+const FAILED_ATTEMPT_BUCKET =
+  new Map<
+    string,
+    {
+      count: number;
+      resetAt: number;
+    }
+  >();
+
+function getClientIp(
+  request: Request
+) {
+  const forwarded =
+    request.headers.get(
+      "x-forwarded-for"
+    ) ??
+    request.headers.get(
+      "x-real-ip"
+    ) ??
+    "";
+
+  return (
+    forwarded
+      .split(",")[0]
+      ?.trim() ||
+    "local"
+  );
 }
 
-export async function POST(request: Request) {
-  try {
-    const ip = getClientIp(request);
-    const now = Date.now();
-    const bucket = FAILED_ATTEMPT_BUCKET.get(ip);
+function jsonResponse(
+  data: Record<string, any>,
+  status = 200
+) {
+  return NextResponse.json(data, {
+    status,
+    headers: {
+      "Cache-Control":
+        "no-store, no-cache, must-revalidate, proxy-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
+    },
+  });
+}
 
-    if (bucket && bucket.resetAt > now && bucket.count >= 8) {
-      return NextResponse.json({ ok: false, message: "Invalid payment ID." }, { status: 429 });
+function recordFailedAttempt(
+  ip: string,
+  now: number
+) {
+  const prior =
+    FAILED_ATTEMPT_BUCKET.get(
+      ip
+    );
+
+  if (
+    !prior ||
+    prior.resetAt <= now
+  ) {
+    FAILED_ATTEMPT_BUCKET.set(
+      ip,
+      {
+        count: 1,
+        resetAt:
+          now + 60_000,
+      }
+    );
+
+    return;
+  }
+
+  prior.count += 1;
+  prior.resetAt =
+    now + 60_000;
+}
+
+export async function POST(
+  request: Request
+) {
+  try {
+    const ip =
+      getClientIp(request);
+
+    const now =
+      Date.now();
+
+    const bucket =
+      FAILED_ATTEMPT_BUCKET.get(
+        ip
+      );
+
+    if (
+      bucket &&
+      bucket.resetAt > now &&
+      bucket.count >= 8
+    ) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Invalid payment ID.",
+        },
+        429
+      );
     }
 
-    const body = await request.json();
-    const reference = normalizePaymentId(String(body.paymentId ?? ""));
+    const body =
+      await request.json();
+
+    const reference =
+      normalizePaymentId(
+        String(
+          body.paymentId ??
+            ""
+        )
+      );
 
     if (!reference.publicId) {
-      const prior = FAILED_ATTEMPT_BUCKET.get(ip);
-      if (!prior || prior.resetAt <= now) {
-        FAILED_ATTEMPT_BUCKET.set(ip, { count: 1, resetAt: now + 60_000 });
-      } else {
-        prior.count += 1;
-        prior.resetAt = now + 60_000;
-      }
-      return NextResponse.json({ ok: false, message: "Invalid payment ID." }, { status: 400 });
+      recordFailedAttempt(
+        ip,
+        now
+      );
+
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Invalid payment ID.",
+        },
+        400
+      );
     }
 
-    const supabase = createAdminClient();
+    const supabase =
+      createAdminClient();
 
-    const { data: payment, error: paymentError } = await supabase
+    /*
+     * The public credential is ONLY the public
+     * PAY-xxxxxx identifier.
+     */
+    const {
+      data: payment,
+      error: paymentError,
+    } = await supabase
       .from("payments")
-      .select("*, guests:guest_id(full_name, guest_code, id), events:event_id(name, year, id, seat_selection_open, seat_selection_deadline, allow_member_seat_changes)")
-      .eq("public_payment_id", reference.publicId)
+      .select(
+        "*, guests:guest_id(full_name, guest_code, id), events:event_id(id, name, year, event_date, seat_selection_open, seat_selection_deadline, allow_member_seat_changes)"
+      )
+      .eq(
+        "public_payment_id",
+        reference.publicId
+      )
       .maybeSingle();
 
-    if (paymentError || !payment) {
-      const prior = FAILED_ATTEMPT_BUCKET.get(ip);
-      if (!prior || prior.resetAt <= now) {
-        FAILED_ATTEMPT_BUCKET.set(ip, { count: 1, resetAt: now + 60_000 });
-      } else {
-        prior.count += 1;
-        prior.resetAt = now + 60_000;
-      }
-      return NextResponse.json({ ok: false, message: "Invalid payment ID." }, { status: 404 });
+    if (
+      paymentError ||
+      !payment
+    ) {
+      recordFailedAttempt(
+        ip,
+        now
+      );
+
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Invalid payment ID.",
+        },
+        404
+      );
     }
 
     if (payment.is_voided) {
-      return NextResponse.json({ ok: false, message: "Invalid payment ID." }, { status: 403 });
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Invalid payment ID.",
+        },
+        403
+      );
     }
 
-    const guest = payment.guests;
-    const event = payment.events;
+    const guest =
+      payment.guests;
 
-    if (!guest || !event) {
-      return NextResponse.json({ ok: false, message: "Invalid payment ID." }, { status: 404 });
+    const event =
+      payment.events;
+
+    if (
+      !guest ||
+      !event
+    ) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Invalid payment ID.",
+        },
+        404
+      );
     }
 
-    const { data: payments, error: paymentsError } = await supabase
+    /*
+     * Calculate all valid payments for this guest
+     * in the same event.
+     */
+    const {
+      data: payments,
+      error: paymentsError,
+    } = await supabase
       .from("payments")
-      .select("amount, is_voided")
-      .eq("guest_id", guest.id)
-      .eq("event_id", event.id)
-      .eq("is_voided", false);
+      .select(
+        "amount, is_voided"
+      )
+      .eq(
+        "guest_id",
+        guest.id
+      )
+      .eq(
+        "event_id",
+        event.id
+      )
+      .eq(
+        "is_voided",
+        false
+      );
 
-    const totalPaid = (payments ?? []).reduce((sum: number, row: any) => sum + Number(row.amount ?? 0), 0);
-
-    if (paymentsError || totalPaid < SEAT_ELIGIBILITY_THRESHOLD) {
-      return NextResponse.json({
-        ok: false,
-        message: "Invalid payment ID.",
-        needsPayment: true,
-        totalPaid
-      }, { status: 403 });
+    if (paymentsError) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Unable to verify payment eligibility.",
+        },
+        500
+      );
     }
 
-    const { data: assignment } = await supabase
+    const totalPaid =
+      (payments ?? [])
+        .reduce(
+          (
+            sum: number,
+            row: any
+          ) =>
+            sum +
+            Number(
+              row?.amount ?? 0
+            ),
+          0
+        );
+
+    if (
+      totalPaid <
+      SEAT_ELIGIBILITY_THRESHOLD
+    ) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Invalid payment ID.",
+          needsPayment: true,
+          totalPaid,
+        },
+        403
+      );
+    }
+
+    /*
+     * Find the permanent Big Costa bus.
+     *
+     * Seat occupancy is tied to this physical bus,
+     * not to a newly-created event seat map.
+     */
+    const bus =
+      await getPermanentBigCostaBus(
+        supabase
+      );
+
+    if (!bus) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Big Costa bus is not configured for the permanent seat map.",
+        },
+        404
+      );
+    }
+
+    /*
+     * Find the guest's currently occupied seat
+     * on the permanent Big Costa bus.
+     *
+     * We deliberately do NOT depend on event_id here.
+     * This prevents a stale event relationship from
+     * hiding an existing permanent seat assignment.
+     */
+    const {
+      data: assignment,
+      error: assignmentError,
+    } = await supabase
       .from("seat_assignments")
-      .select("*, bus_seats(*)")
-      .eq("guest_id", guest.id)
-      .eq("event_id", event.id)
-      .eq("status", "occupied")
+      .select(
+        "*, bus_seats:seat_id(seat_number)"
+      )
+      .eq(
+        "guest_id",
+        guest.id
+      )
+      .eq(
+        "bus_id",
+        bus.id
+      )
+      .eq(
+        "status",
+        "occupied"
+      )
+      .order(
+        "updated_at",
+        {
+          ascending: false,
+        }
+      )
+      .limit(1)
       .maybeSingle();
 
-    const selectedSeat = assignment?.bus_seats?.seat_number ?? null;
+    if (assignmentError) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Unable to load the current seat assignment.",
+        },
+        500
+      );
+    }
 
-    // Clear the failed-attempt bucket on a valid public ID match.
-    FAILED_ATTEMPT_BUCKET.delete(ip);
+    const selectedSeat =
+      assignment
+        ?.bus_seats
+        ?.seat_number ??
+      null;
 
-    return NextResponse.json({
+    /*
+     * A valid public ID should no longer
+     * count as a failed attempt.
+     */
+    FAILED_ATTEMPT_BUCKET.delete(
+      ip
+    );
+
+    return jsonResponse({
       ok: true,
-      event: { id: event.id, name: event.name, year: event.year, event_date: event.event_date },
-      guest: { full_name: guest.full_name },
-      payment: { public_payment_id: payment.public_payment_id },
+
+      event: {
+        id: event.id,
+        name: event.name,
+        year: event.year,
+        event_date:
+          event.event_date,
+      },
+
+      guest: {
+        full_name:
+          guest.full_name,
+      },
+
+      payment: {
+        public_payment_id:
+          payment.public_payment_id,
+      },
+
       selectedSeat,
+
       totalPaid,
+
       eligible: true,
-      seatSelectionOpen: event.seat_selection_open ?? false,
-      deadline: event.seat_selection_deadline,
-      canChangeSeats: event.allow_member_seat_changes ?? true,
+
+      seatSelectionOpen:
+        Boolean(
+          event.seat_selection_open
+        ),
+
+      deadline:
+        event.seat_selection_deadline ??
+        null,
+
+      canChangeSeats:
+        event.allow_member_seat_changes ??
+        true,
+
+      bus_id: bus.id,
     });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, message: "Invalid payment ID." }, { status: 500 });
+    return jsonResponse(
+      {
+        ok: false,
+        message:
+          "Invalid payment ID.",
+      },
+      500
+    );
   }
 }

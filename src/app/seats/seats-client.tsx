@@ -50,12 +50,10 @@ export default function SeatsClient() {
   }
 
   async function loadSeatMap() {
-    const response = await fetch(`/api/seats/map`, { method: "GET" });
-    const json = await response.json();
-    if (json.ok) {
-      setMapSeats(json.seats ?? []);
-    }
-  }
+    const response = await fetch("/api/seats/map", {
+  method: "GET",
+  cache: "no-store",
+});
 
   function selectLocalSeat(seat: string) {
     const seatRow = mapSeats.find((s) => s.seat_number === seat);
