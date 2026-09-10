@@ -40,7 +40,7 @@ export default function SeatsClient() {
       setEvent(json.event);
       setSelected(json.selectedSeat ?? null);
       setVerified(true);
-      await loadSeatMap(json.event?.id);
+      await loadSeatMap();
     } catch (e: any) {
       setError("Payment verification failed.");
       setVerified(false);
@@ -49,9 +49,8 @@ export default function SeatsClient() {
     }
   }
 
-  async function loadSeatMap(eventId?: string) {
-    const query = typeof eventId === "string" && eventId ? `?event_id=${encodeURIComponent(eventId)}` : "";
-    const response = await fetch(`/api/seats/map${query}`, { method: "GET" });
+  async function loadSeatMap() {
+    const response = await fetch(`/api/seats/map`, { method: "GET" });
     const json = await response.json();
     if (json.ok) {
       setMapSeats(json.seats ?? []);
@@ -88,7 +87,7 @@ export default function SeatsClient() {
 
       setSelected(seat);
       setError(null);
-      await loadSeatMap(event?.id);
+      await loadSeatMap();
     } catch (e: any) {
       setError("Seat selection failed.");
     } finally {

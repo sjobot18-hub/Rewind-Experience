@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { normalizePaymentId, SEAT_ELIGIBILITY_THRESHOLD } from "@/lib/seats";
+import { normalizePaymentId, SEAT_ELIGIBILITY_THRESHOLD, getPermanentBigCostaBus } from "@/lib/seats";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
@@ -56,15 +56,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, message: "Seat selection deadline has passed." }, { status: 403 });
     }
 
-    const { data: bus } = await supabase
-      .from("event_buses")
-      .select("*")
-      .eq("event_id", event.id)
-      .eq("name", "Big Costa")
-      .maybeSingle();
-
+    const bus = await getPermanentBigCostaBus(supabase);
     if (!bus) {
-      return NextResponse.json({ ok: false, message: "Big Costa bus not configured for this event." }, { status: 404 });
+      return NextResponse.json({ ok: false, message: "Big Costa bus not configured for the permanent seat map." }, { status: 404 });
     }
 
     const { data: busSeat, error: seatError } = await supabase
@@ -81,7 +75,6 @@ export async function POST(request: Request) {
     const { data: existing } = await supabase
       .from("seat_assignments")
       .select("*")
-      .eq("event_id", event.id)
       .eq("bus_id", bus.id)
       .eq("seat_id", busSeat.id)
       .eq("status", "occupied")
@@ -94,7 +87,6 @@ export async function POST(request: Request) {
     const { data: priorAssignment } = await supabase
       .from("seat_assignments")
       .select("*")
-      .eq("event_id", event.id)
       .eq("guest_id", guest.id)
       .eq("status", "occupied")
       .maybeSingle();

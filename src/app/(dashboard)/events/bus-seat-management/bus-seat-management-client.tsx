@@ -103,6 +103,33 @@ export default function BusSeatManagementClient({ event, admin, isOwner, permiss
     }
   }
 
+  async function resetAllSeats() {
+    if (!window.confirm("Reset all seats?\nThis will release all current seat assignments and make all 36 seats available. Your payment and guest records will not be affected.")) {
+      return;
+    }
+
+    setLoading(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/seats/manage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset_all_seats" })
+      });
+      const json = await response.json();
+      if (!response.ok || !json.ok) {
+        setMessage(json.message ?? "Unable to reset all seats.");
+        return;
+      }
+      setMessage("All seat assignments have been released.");
+      await loadSeatMap();
+    } catch (error: any) {
+      setMessage(error.message ?? "Unable to reset all seats.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function releaseSeat(seat: any) {
     if (!seat || seat.status !== "occupied") return;
     const occupantName = seat.display_name || "this member";
@@ -243,8 +270,13 @@ export default function BusSeatManagementClient({ event, admin, isOwner, permiss
       <div className="card seat-map-card">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="font-black text-navy">Big Costa Seat Map</span>
-          <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
-            {loading ? "Loading" : `${seats.length} seats`}
+          <span className="flex items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              {loading ? "Loading" : `${seats.length} seats`}
+            </span>
+            <button className="btn-secondary btn-xs" disabled={loading} onClick={resetAllSeats}>
+              Reset All Seats
+            </button>
           </span>
         </div>
         <div className="mt-4 grid grid-cols-5 md:grid-cols-7 gap-2 seat-grid">

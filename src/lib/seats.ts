@@ -2,6 +2,50 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const SEAT_ELIGIBILITY_THRESHOLD = 5000;
 
+export async function getPermanentBigCostaBus(supabase: ReturnType<typeof createAdminClient>) {
+  const { data: busRows, error: busRowsError } = await supabase
+    .from("event_buses")
+    .select("*")
+    .eq("name", "Big Costa")
+    .order("created_at", { ascending: true });
+
+  if (busRowsError) {
+    throw new Error(busRowsError.message ?? "Unable to inspect Big Costa buses.");
+  }
+
+  const rows = Array.isArray(busRows) ? busRows : [];
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const scored = [] as Array<{ bus: any; seatCount: number }>;
+  for (const bus of rows) {
+    const { data: seats, error: seatCountError } = await supabase
+      .from("bus_seats")
+      .select("id")
+      .eq("bus_id", bus.id);
+
+    if (!seatCountError) {
+      scored.push({ bus, seatCount: Array.isArray(seats) ? seats.length : 0 });
+    }
+  }
+
+  const permanent = scored
+    .filter((entry) => entry.seatCount === 36)
+    .sort((a, b) => b.seatCount - a.seatCount)[0];
+
+  if (permanent?.bus) {
+    return permanent.bus;
+  }
+
+  const explicitlyPermanent = rows.find((bus: any) => bus?.is_permanent === true) ?? null;
+  if (explicitlyPermanent) {
+    return explicitlyPermanent;
+  }
+
+  return rows[0] ?? null;
+}
+
 export function getGuestFullName(value: unknown): string {
   if (typeof value === "string") {
     return value.trim();

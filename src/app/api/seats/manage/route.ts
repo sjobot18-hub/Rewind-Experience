@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
-import { getCurrentAdmin, getActiveEvent, can } from "@/lib/currentAdmin";
-import { SEAT_ELIGIBILITY_THRESHOLD, getGuestFullName } from "@/lib/seats";
+import { getCurrentAdmin, can } from "@/lib/currentAdmin";
+import { SEAT_ELIGIBILITY_THRESHOLD, getGuestFullName, getPermanentBigCostaBus } from "@/lib/seats";
 
 function authorizeAdmin(permissions: string[], isOwner: boolean) {
   return isOwner || can(permissions as any, isOwner, "manage_seats") || can(permissions as any, isOwner, "manage_event_settings");
@@ -18,28 +18,9 @@ export async function GET(request: Request) {
       }
     }
 
-    const { searchParams } = new URL(request.url);
-    const requestedEventId = String(searchParams.get("event_id") ?? "");
-
-    let busQuery = supabase.from("event_buses").select("*").eq("name", "Big Costa");
-    if (requestedEventId) {
-      busQuery = busQuery.eq("event_id", requestedEventId);
-    }
-
-    const { data: bus, error: busError } = await busQuery.maybeSingle();
-    if (busError || !bus) {
-      return NextResponse.json({ ok: false, message: "Big Costa bus not configured for the requested event." }, { status: 404 });
-    }
-
-    const resolvedEventId = bus.event_id;
-    const { data: event, error: eventError } = await supabase
-      .from("events")
-      .select("*")
-      .eq("id", resolvedEventId)
-      .maybeSingle();
-
-    if (eventError || !event) {
-      return NextResponse.json({ ok: false, message: "No event configured for the selected bus." }, { status: 404 });
+    const bus = await getPermanentBigCostaBus(supabase);
+    if (!bus) {
+      return NextResponse.json({ ok: false, message: "Big Costa bus not configured for the permanent seat map." }, { status: 404 });
     }
 
     const { data: seatsData, error: seatError } = await supabase
@@ -58,7 +39,6 @@ export async function GET(request: Request) {
     const { data: assignmentRows, error: assignmentError } = await supabase
       .from("seat_assignments")
       .select("*, guests:guest_id(full_name, guest_code, id), payments:payment_id(payment_code, amount, is_voided, id), bus_seats:seat_id(*)")
-      .eq("event_id", event.id)
       .eq("bus_id", bus.id)
       .order("updated_at", { ascending: false });
 
@@ -127,7 +107,6 @@ export async function GET(request: Request) {
     const { data: guestRowsData, error: guestRowsError } = await supabase
       .from("guests")
       .select("*")
-      .eq("event_id", event.id)
       .order("full_name", { ascending: true });
 
     if (guestRowsError) {
@@ -139,7 +118,6 @@ export async function GET(request: Request) {
     const { data: paymentRowsData, error: paymentRowsLookupError } = await supabase
       .from("payments")
       .select("*, guests:guest_id(full_name, guest_code, id)")
-      .eq("event_id", event.id)
       .eq("is_voided", false)
       .order("paid_at", { ascending: false });
 
@@ -194,7 +172,7 @@ export async function GET(request: Request) {
       .filter((guest: any) => guest.eligible)
       .sort((a, b) => String(a.full_name ?? "").localeCompare(String(b.full_name ?? "")));
 
-    return NextResponse.json({ ok: true, event, bus, seats: seatRows, assignments, eligibleGuests });
+    return NextResponse.json({ ok: true, event: null, bus, seats: seatRows, assignments, eligibleGuests });
   } catch (error: any) {
     return NextResponse.json({ ok: false, message: error.message ?? "Seat management unavailable." }, { status: 500 });
   }
@@ -209,42 +187,19 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const action = String(body.action ?? "");
-    const requestedEventId = String(body.event_id ?? "");
-    const event = await getActiveEvent(requestedEventId || undefined);
-    if (!event) {
-      return NextResponse.json({ ok: false, message: "No event configured for the selected bus." }, { status: 404 });
-    }
-
     const supabase = createAdminClient();
 
     if (action === "seat_selection") {
       const update: Record<string, any> = {};
-      if (typeof body.seat_selection_open === "boolean") {
-        update.seat_selection_open = body.seat_selection_open;
-      }
-
-      if (body.seat_selection_deadline === "" || body.seat_selection_deadline === null) {
-        update.seat_selection_deadline = null;
-      } else if (typeof body.seat_selection_deadline === "string") {
+      if (typeof body.seat_selection_open === "boolean") update.seat_selection_open = body.seat_selection_open;
+      if (body.seat_selection_deadline === "" || body.seat_selection_deadline === null) update.seat_selection_deadline = null;
+      else if (typeof body.seat_selection_deadline === "string") {
         const deadlineValue = body.seat_selection_deadline.trim();
-        if (deadlineValue) {
-          update.seat_selection_deadline = new Date(deadlineValue).toISOString();
-        }
+        if (deadlineValue) update.seat_selection_deadline = new Date(deadlineValue).toISOString();
       }
-
       if (Object.keys(update).length === 0) {
         return NextResponse.json({ ok: false, message: "No event seat selection change sent." }, { status: 400 });
       }
-
-      const { error } = await supabase
-        .from("events")
-        .update(update)
-        .eq("id", event.id);
-
-      if (error) {
-        return NextResponse.json({ ok: false, message: error.message }, { status: 409 });
-      }
-
       return NextResponse.json({ ok: true, message: "Seat selection updated." });
     }
 
@@ -257,13 +212,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, message: "Choose a guest and a seat before assigning." }, { status: 400 });
       }
 
-      const { data: bus } = await supabase
-        .from("event_buses")
-        .select("*")
-        .eq("event_id", event.id)
-        .eq("name", "Big Costa")
-        .maybeSingle();
-
+      const bus = await getPermanentBigCostaBus(supabase);
       if (!bus) {
         return NextResponse.json({ ok: false, message: "Big Costa bus not configured." }, { status: 404 });
       }
@@ -287,17 +236,15 @@ export async function POST(request: Request) {
         .from("guests")
         .select("*")
         .eq("id", guestId)
-        .eq("event_id", event.id)
         .maybeSingle();
 
       if (!guest) {
-        return NextResponse.json({ ok: false, message: "Guest could not be found for this event." }, { status: 404 });
+        return NextResponse.json({ ok: false, message: "Guest could not be found." }, { status: 404 });
       }
 
       const { data: paymentRowsData, error: paymentRowsError } = await supabase
         .from("payments")
         .select("*")
-        .eq("event_id", event.id)
         .eq("guest_id", guest.id)
         .eq("is_voided", false)
         .order("paid_at", { ascending: false });
@@ -307,10 +254,9 @@ export async function POST(request: Request) {
       }
 
       const paymentRows = paymentRowsData ?? [];
-
       const totalPaid = paymentRows.reduce((sum: number, row: any) => sum + Number(row.amount ?? 0), 0);
       if (totalPaid < SEAT_ELIGIBILITY_THRESHOLD) {
-        return NextResponse.json({ ok: false, message: `Guest is not eligible. At least ₦5,000 total valid payment is required.`, needsPayment: true, totalPaid }, { status: 403 });
+        return NextResponse.json({ ok: false, message: `Guest is not eligible. At least ?5,000 total valid payment is required.`, needsPayment: true, totalPaid }, { status: 403 });
       }
 
       const selectedPayment = paymentRows.find((row: any) => row.id === paymentId) ?? paymentRows[0] ?? null;
@@ -321,7 +267,6 @@ export async function POST(request: Request) {
       const { data: existingGuestSeat } = await supabase
         .from("seat_assignments")
         .select("*, bus_seats:seat_id(seat_number)")
-        .eq("event_id", event.id)
         .eq("guest_id", guest.id)
         .eq("status", "occupied")
         .maybeSingle();
@@ -334,7 +279,6 @@ export async function POST(request: Request) {
       const { data: seatTaken } = await supabase
         .from("seat_assignments")
         .select("*, guests:guest_id(full_name)")
-        .eq("event_id", event.id)
         .eq("bus_id", bus.id)
         .eq("seat_id", seat.id)
         .eq("status", "occupied")
@@ -345,7 +289,7 @@ export async function POST(request: Request) {
       }
 
       const assignmentPayload = {
-        event_id: event.id,
+        event_id: guest.event_id,
         bus_id: bus.id,
         seat_id: seat.id,
         guest_id: guest.id,
@@ -375,17 +319,22 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, message: "Seat selection is missing." }, { status: 400 });
       }
 
+      const bus = await getPermanentBigCostaBus(supabase);
+      if (!bus) {
+        return NextResponse.json({ ok: false, message: "Big Costa bus not configured." }, { status: 404 });
+      }
+
       const { data: seat } = await supabase
         .from("bus_seats")
         .select("*")
         .eq("id", seatId)
-        .eq("bus_id", (await supabase.from("event_buses").select("id").eq("event_id", event.id).eq("name", "Big Costa").maybeSingle()).data?.id ?? "")
+        .eq("bus_id", bus.id)
         .maybeSingle();
 
       const { data: assignment } = await supabase
         .from("seat_assignments")
         .select("*, guests:guest_id(full_name), bus_seats:seat_id(seat_number)")
-        .eq("event_id", event.id)
+        .eq("bus_id", bus.id)
         .eq("status", "occupied")
         .eq("seat_id", seatId)
         .maybeSingle();
@@ -398,13 +347,32 @@ export async function POST(request: Request) {
         .from("seat_assignments")
         .update({ status: "released", updated_at: new Date().toISOString() })
         .eq("id", assignment.id)
-        .eq("event_id", event.id);
+        .eq("bus_id", bus.id);
 
       if (error) {
         return NextResponse.json({ ok: false, message: error.message ?? "Unable to release seat. Please try again." }, { status: 409 });
       }
 
       return NextResponse.json({ ok: true, message: `Seat ${assignment.bus_seats?.seat_number ?? seat?.seat_number ?? ""} released.`, assignment });
+    }
+
+    if (action === "reset_all_seats") {
+      const bus = await getPermanentBigCostaBus(supabase);
+      if (!bus) {
+        return NextResponse.json({ ok: false, message: "Big Costa bus not configured for the permanent seat map." }, { status: 404 });
+      }
+
+      const { error } = await supabase
+        .from("seat_assignments")
+        .update({ status: "released", updated_at: new Date().toISOString() })
+        .eq("bus_id", bus.id)
+        .neq("status", "released");
+
+      if (error) {
+        return NextResponse.json({ ok: false, message: error.message ?? "Unable to reset all seats." }, { status: 409 });
+      }
+
+      return NextResponse.json({ ok: true, message: "All Big Costa seat assignments have been released." });
     }
 
     return NextResponse.json({ ok: false, message: "Unsupported admin seat action." }, { status: 400 });
