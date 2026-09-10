@@ -2,6 +2,27 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const SEAT_ELIGIBILITY_THRESHOLD = 5000;
 
+export function getGuestFullName(value: unknown): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (Array.isArray(value)) {
+    const first = value[0];
+    if (first && typeof first === "object" && "full_name" in first) {
+      const name = (first as { full_name?: unknown }).full_name;
+      return typeof name === "string" ? name.trim() : "";
+    }
+  }
+
+  if (value && typeof value === "object" && "full_name" in value) {
+    const name = (value as { full_name?: unknown }).full_name;
+    return typeof name === "string" ? name.trim() : "";
+  }
+
+  return "";
+}
+
 export function normalizePaymentId(input: string) {
   const cleaned = String(input ?? "")
     .trim()
@@ -103,6 +124,6 @@ export function normalizeBusSeatType(seatType: string | null | undefined) {
 }
 
 export function seatDisplayNameFromAssignment(assignment: any) {
-  if (!assignment?.guests?.full_name) return "Member";
-  return assignment.guests.full_name.trim().split(/\s+/)[0] || "Member";
+  const display = getGuestFullName(assignment?.guests);
+  return display || "Member";
 }
