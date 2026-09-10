@@ -31,11 +31,12 @@ export function normalizePaymentId(input: string) {
 
   if (!cleaned) return { code: "", publicId: "" };
 
-  // Accept the receipt-facing payment_code first.
-  const code = cleaned.startsWith("PAY") ? cleaned.replace(/-/g, "") : "";
-  const publicId = cleaned.startsWith("PAY-") ? cleaned : "";
+  // Public verification accepts only the random public format PAY-<6 digits>.
+  // The internal payment_code is never the public credential and is never
+  // accepted by the public verification or seat portal inputs.
+  const publicId = /^PAY-\d{6}$/.test(cleaned) ? cleaned : "";
 
-  return { code, publicId };
+  return { code: "", publicId };
 }
 
 export function normalizeReceiptCode(input: string) {
@@ -49,38 +50,19 @@ export function normalizeReceiptCode(input: string) {
 
 export async function findPaymentByPublicOrReceiptIdentifier(supabase: ReturnType<typeof createAdminClient>, rawIdentifier: string) {
   const reference = normalizePaymentId(rawIdentifier);
-  const code = normalizeReceiptCode(reference.code || rawIdentifier);
 
-  if (!reference.code && !reference.publicId) {
+  if (!reference.publicId) {
     return null;
   }
 
   const query = supabase
     .from("payments")
-    .select("*, guests:guest_id(full_name, guest_code, id), events:event_id(name, year, id, seat_selection_open, seat_selection_deadline, allow_member_seat_changes)");
+    .select("*, guests:guest_id(full_name, guest_code, id), events:event_id(name, year, id, seat_selection_open, seat_selection_deadline, allow_member_seat_changes)")
+    .eq("public_payment_id", reference.publicId);
 
-  let paymentQuery = query;
-  if (reference.publicId) {
-    paymentQuery = paymentQuery.eq("public_payment_id", reference.publicId);
-  } else if (code) {
-    paymentQuery = paymentQuery.eq("payment_code", code);
-  }
-
-  const lookupRows = await paymentQuery.maybeSingle();
+  const lookupRows = await query.maybeSingle();
   if (!lookupRows.error && lookupRows.data) {
     return lookupRows.data;
-  }
-
-  if (code) {
-    const fallback = await supabase
-      .from("payments")
-      .select("*, guests:guest_id(full_name, guest_code, id), events:event_id(name, year, id, seat_selection_open, seat_selection_deadline, allow_member_seat_changes)")
-      .eq("payment_code", code)
-      .maybeSingle();
-
-    if (!fallback.error && fallback.data) {
-      return fallback.data;
-    }
   }
 
   return null;

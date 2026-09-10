@@ -118,7 +118,7 @@ export default function SeatsClient() {
             <div className="verify-form">
               <label>
                 <span>Payment ID</span>
-                <input value={paymentId} onChange={(e) => setPaymentId(e.target.value)} placeholder="PAY0004" />
+                <input value={paymentId} onChange={(e) => setPaymentId(e.target.value)} placeholder="Enter payment ID" />
               </label>
               <button className="primary-button" disabled={loading} onClick={verifyPayment}>
                 {loading ? "Verifying..." : "Verify Payment ID"}

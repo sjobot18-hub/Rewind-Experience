@@ -58,6 +58,7 @@ export interface Payment {
   event_id: string;
   guest_id: string;
   payment_code: string;
+  public_payment_id?: string | null;
   receipt_number: string;
   amount: number;
   payment_method: PaymentMethod;

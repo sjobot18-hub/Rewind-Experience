@@ -158,7 +158,8 @@ export default function PaymentsClient({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-slate-500 border-b border-slate-200">
-              <th className="py-2 pr-4">Payment ID</th>
+              <th className="py-2 pr-4">Internal Payment Code</th>
+              <th className="py-2 pr-4">Public Payment ID</th>
               <th className="py-2 pr-4">Date</th>
               <th className="py-2 pr-4">Guest</th>
               <th className="py-2 pr-4">Amount</th>
@@ -171,6 +172,7 @@ export default function PaymentsClient({
             {payments.map((p) => (
               <tr key={p.id} className={`border-b border-slate-100 ${p.is_voided ? "opacity-40 line-through" : ""}`}>
                 <td className="py-2 pr-4">{p.payment_code}</td>
+                <td className="py-2 pr-4">{p.public_payment_id ?? "—"}</td>
                 <td className="py-2 pr-4">{formatDate(p.paid_at)}</td>
                 <td className="py-2 pr-4">{p.guests?.full_name} ({p.guests?.guest_code})</td>
                 <td className="py-2 pr-4">{formatNaira(p.amount)}</td>

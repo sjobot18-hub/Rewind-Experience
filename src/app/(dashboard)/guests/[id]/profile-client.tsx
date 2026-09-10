@@ -184,7 +184,7 @@ export default function GuestProfileClient({
               </div>
               <div className="flex justify-between border-b border-dashed border-slate-200 py-2">
                 <span className="text-slate-500">Payment ID</span>
-                <span className="font-semibold text-right text-navy">{receipt.payment_code}</span>
+                <span className="font-semibold text-right text-navy">{receipt.public_payment_id ?? receipt.payment_code}</span>
               </div>
               <div className="flex justify-between border-b border-dashed border-slate-200 py-2">
                 <span className="text-slate-500">Date</span>
