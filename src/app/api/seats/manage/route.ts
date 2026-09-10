@@ -18,25 +18,28 @@ export async function GET(request: Request) {
       }
     }
 
+    const { searchParams } = new URL(request.url);
+    const requestedEventId = String(searchParams.get("event_id") ?? "");
+
+    let busQuery = supabase.from("event_buses").select("*").eq("name", "Big Costa");
+    if (requestedEventId) {
+      busQuery = busQuery.eq("event_id", requestedEventId);
+    }
+
+    const { data: bus, error: busError } = await busQuery.maybeSingle();
+    if (busError || !bus) {
+      return NextResponse.json({ ok: false, message: "Big Costa bus not configured for the requested event." }, { status: 404 });
+    }
+
+    const resolvedEventId = bus.event_id;
     const { data: event, error: eventError } = await supabase
       .from("events")
       .select("*")
-      .eq("is_currently_active", true)
+      .eq("id", resolvedEventId)
       .maybeSingle();
 
     if (eventError || !event) {
-      return NextResponse.json({ ok: false, message: "No active event configured." }, { status: 404 });
-    }
-
-    const { data: bus, error: busError } = await supabase
-      .from("event_buses")
-      .select("*")
-      .eq("event_id", event.id)
-      .eq("name", "Big Costa")
-      .maybeSingle();
-
-    if (busError || !bus) {
-      return NextResponse.json({ ok: false, message: "Big Costa bus not configured for the active event." }, { status: 404 });
+      return NextResponse.json({ ok: false, message: "No event configured for the selected bus." }, { status: 404 });
     }
 
     const { data: seatsData, error: seatError } = await supabase
@@ -206,9 +209,10 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const action = String(body.action ?? "");
-    const event = await getActiveEvent();
+    const requestedEventId = String(body.event_id ?? "");
+    const event = await getActiveEvent(requestedEventId || undefined);
     if (!event) {
-      return NextResponse.json({ ok: false, message: "No active event configured." }, { status: 404 });
+      return NextResponse.json({ ok: false, message: "No event configured for the selected bus." }, { status: 404 });
     }
 
     const supabase = createAdminClient();

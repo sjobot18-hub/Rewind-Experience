@@ -22,7 +22,8 @@ export default function BusSeatManagementClient({ event, admin, isOwner, permiss
       try {
         setLoading(true);
         setMessage(null);
-        const response = await fetch("/api/seats/manage");
+        const url = `/api/seats/manage${event?.id ? `?event_id=${encodeURIComponent(event.id)}` : ""}`;
+        const response = await fetch(url);
         const json = await response.json();
         if (!json.ok) {
           setMessage(json.message ?? "Unable to load seat map.");
@@ -63,6 +64,7 @@ export default function BusSeatManagementClient({ event, admin, isOwner, permiss
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "seat_selection",
+          event_id: event?.id,
           seat_selection_open: nextOpen,
           seat_selection_deadline: nextDeadline || null,
         })
@@ -114,7 +116,7 @@ export default function BusSeatManagementClient({ event, admin, isOwner, permiss
       const response = await fetch("/api/seats/manage", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "release", seat_id: seat.seat_id })
+        body: JSON.stringify({ action: "release", event_id: event?.id, seat_id: seat.seat_id })
       });
       const json = await response.json();
       if (!response.ok || !json.ok) {
@@ -162,6 +164,7 @@ export default function BusSeatManagementClient({ event, admin, isOwner, permiss
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "assign",
+          event_id: event?.id,
           seat_id: selectedSeat.seat_id,
           guest_id: selectedGuestId,
           payment_id: guest.payment_id,
