@@ -8,20 +8,17 @@ export async function POST(request: Request) {
     const reference = normalizePaymentId(String(body.paymentId ?? ""));
     const seat = String(body.seat ?? "").trim().toUpperCase();
 
-    if (!reference.code && !reference.publicId) {
+    if (!reference.publicId) {
       return NextResponse.json({ ok: false, message: "Invalid payment ID." }, { status: 400 });
     }
 
     const supabase = createAdminClient();
 
-    let paymentQuery = supabase.from("payments").select("*, guests:guest_id(*), events:event_id(*)");
-    if (reference.publicId) {
-      paymentQuery = paymentQuery.eq("public_payment_id", reference.publicId);
-    } else {
-      paymentQuery = paymentQuery.eq("payment_code", reference.code);
-    }
-
-    const { data: payment, error: paymentError } = await paymentQuery.maybeSingle();
+    const { data: payment, error: paymentError } = await supabase
+      .from("payments")
+      .select("*, guests:guest_id(*), events:event_id(*)")
+      .eq("public_payment_id", reference.publicId)
+      .maybeSingle();
 
     if (paymentError || !payment) {
       return NextResponse.json({ ok: false, message: "Payment ID not found." }, { status: 404 });

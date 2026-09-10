@@ -50,7 +50,7 @@ export default function BusSeatManagementClient({ event, admin, isOwner, permiss
     const query = guestQuery.trim().toLowerCase();
     if (!query) return eligibleGuests;
     return eligibleGuests.filter((guest: any) => {
-      return `${guest.full_name} ${guest.guest_code ?? ""} ${guest.payment_code ?? ""} ${guest.payment_id ?? ""}`.toLowerCase().includes(query);
+      return `${guest.full_name} ${guest.guest_code ?? ""} ${guest.public_payment_id ?? ""} ${guest.payment_code ?? ""} ${guest.payment_id ?? ""}`.toLowerCase().includes(query);
     });
   }, [eligibleGuests, guestQuery]);
 
@@ -291,7 +291,8 @@ export default function BusSeatManagementClient({ event, admin, isOwner, permiss
                       <div className="text-sm font-bold text-slate-800">{guest.full_name}</div>
                       <div className="text-[11px] text-slate-500">
                         <span className="font-semibold">Guest ID:</span> {guest.id.slice(0, 8)}<span className="mx-1">·</span>
-                        <span className="font-semibold">Payment:</span> {guest.payment_code ?? guest.payment_id ?? "—"}<span className="mx-1">·</span>
+                        <span className="font-semibold">Payment ID:</span> {guest.public_payment_id ?? guest.payment_id ?? "—"}<span className="mx-1">·</span>
+                        <span className="font-semibold">Internal Payment Code:</span> {guest.payment_code ?? "—"}<span className="mx-1">·</span>
                         <span className="font-semibold">Status:</span> {guest.payment_status ?? "paid"}
                       </div>
                       <div className="text-[11px] text-slate-500">

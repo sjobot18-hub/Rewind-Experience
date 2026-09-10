@@ -48,6 +48,27 @@ export default function GuestProfileClient({
     );
   }
 
+  async function generateUniquePublicPaymentId() {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const values = new Uint32Array(1);
+      crypto.getRandomValues(values);
+      const value = 100000 + (values[0] % 900000);
+      const publicPaymentId = `PAY-${String(value).padStart(6, "0")}`;
+
+      const { data: existing, error } = await supabase
+        .from("payments")
+        .select("id")
+        .eq("public_payment_id", publicPaymentId)
+        .maybeSingle();
+
+      if (!error && !existing) {
+        return publicPaymentId;
+      }
+    }
+
+    throw new Error("Could not generate a unique public payment ID.");
+  }
+
   async function submitPayment(amt: number) {
     setSubmitting(true);
     setError(null);
@@ -66,7 +87,26 @@ export default function GuestProfileClient({
       return;
     }
 
-    setReceipt(data as Payment);
+    try {
+      const payment = data as Payment | null;
+      const publicPaymentId = await generateUniquePublicPaymentId();
+      if (payment?.id) {
+        await supabase
+          .from("payments")
+          .update({ public_payment_id: publicPaymentId })
+          .eq("id", payment.id);
+      }
+
+      if (payment) {
+        setReceipt({ ...payment, public_payment_id: publicPaymentId } as Payment);
+      } else {
+        setReceipt(null);
+      }
+    } catch (e: any) {
+      setError(e.message ?? "Could not assign public payment ID.");
+      return;
+    }
+
     setShowForm(false);
     setAmount("");
     setNotes("");
