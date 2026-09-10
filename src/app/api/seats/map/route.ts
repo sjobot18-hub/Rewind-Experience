@@ -5,17 +5,27 @@ import { NextResponse } from "next/server";
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const eventId = searchParams.get("event_id") || "";
+    const requestedEventId = (searchParams.get("event_id") ?? "").trim();
     const supabase = createAdminClient();
 
     let busQuery = supabase.from("event_buses").select("*").eq("name", "Big Costa");
-    if (eventId) {
-      busQuery = busQuery.eq("event_id", eventId);
+    if (requestedEventId) {
+      busQuery = busQuery.eq("event_id", requestedEventId);
     }
 
     const { data: bus, error: busError } = await busQuery.maybeSingle();
     if (busError || !bus) {
-      return NextResponse.json({ ok: false, message: "Big Costa bus not configured." }, { status: 404 });
+      return NextResponse.json({ ok: false, message: "Big Costa bus not configured for the requested event." }, { status: 404 });
+    }
+
+    const { data: event, error: eventError } = await supabase
+      .from("events")
+      .select("*")
+      .eq("id", bus.event_id)
+      .maybeSingle();
+
+    if (eventError || !event) {
+      return NextResponse.json({ ok: false, message: "Seat event could not be resolved from the Big Costa bus." }, { status: 404 });
     }
 
     const { data: seats, error: seatError } = await supabase
@@ -86,7 +96,7 @@ export async function GET(request: Request) {
       };
     });
 
-    return NextResponse.json({ ok: true, seats: output, event_id: bus.event_id, bus_id: bus.id });
+    return NextResponse.json({ ok: true, event, bus, seats: output, event_id: bus.event_id, bus_id: bus.id });
   } catch (error: any) {
     return NextResponse.json({ ok: false, message: error.message ?? "Seat map failed." }, { status: 500 });
   }
