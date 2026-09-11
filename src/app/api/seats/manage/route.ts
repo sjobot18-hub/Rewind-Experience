@@ -1388,7 +1388,7 @@ export async function POST(
       }
 
       const {
-        data: assignment,
+        data: assignments,
         error:
           assignmentLookupError,
       } =
@@ -1397,11 +1397,15 @@ export async function POST(
             "seat_assignments"
           )
           .select(
-            "*, guests:guest_id(full_name), bus_seats:seat_id(seat_number)"
+            "id"
           )
           .eq(
             "bus_id",
             bus.id
+          )
+          .eq(
+            "event_id",
+            event.id
           )
           .eq(
             "seat_id",
@@ -1411,14 +1415,7 @@ export async function POST(
             "status",
             "occupied"
           )
-          .order(
-            "updated_at",
-            {
-              ascending: false,
-            }
-          )
-          .limit(1)
-          .maybeSingle();
+          ;
 
       if (
         assignmentLookupError
@@ -1434,7 +1431,12 @@ export async function POST(
         );
       }
 
-      if (!assignment) {
+      const activeAssignments =
+        Array.isArray(assignments)
+          ? assignments
+          : [];
+
+      if (activeAssignments.length === 0) {
         return jsonResponse(
           {
             ok: false,
@@ -1446,6 +1448,7 @@ export async function POST(
       }
 
       const {
+        data: releasedAssignments,
         error: releaseError,
       } =
         await supabase
@@ -1459,20 +1462,37 @@ export async function POST(
               new Date().toISOString(),
           })
           .eq(
-            "id",
-            assignment.id
+            "seat_id",
+            seatId
           )
           .eq(
             "bus_id",
             bus.id
-          );
+          )
+          .eq(
+            "event_id",
+            event.id
+          )
+          .eq(
+            "status",
+            "occupied"
+          )
+          .select("id, status");
 
-      if (releaseError) {
+      if (
+        releaseError ||
+        !releasedAssignments ||
+        releasedAssignments.length !== activeAssignments.length ||
+        releasedAssignments.some(
+          (releasedAssignment) =>
+            releasedAssignment.status !== "released"
+        )
+      ) {
         return jsonResponse(
           {
             ok: false,
             message:
-              releaseError.message ??
+              releaseError?.message ??
               "Unable to release seat. Please try again.",
           },
           409
@@ -1481,12 +1501,7 @@ export async function POST(
 
       return jsonResponse({
         ok: true,
-        message: `Seat ${
-          assignment
-            .bus_seats
-            ?.seat_number ??
-          seat.seat_number
-        } released.`,
+        message: `Seat ${seat.seat_number} released.`,
       });
     }
 
@@ -1512,6 +1527,10 @@ export async function POST(
           .eq(
             "bus_id",
             bus.id
+          )
+          .eq(
+            "event_id",
+            event.id
           )
           .eq(
             "status",
@@ -1586,6 +1605,31 @@ export async function POST(
             409
           );
         }
+      }
+
+      const {
+        data: remainingAssignments,
+        error: remainingAssignmentsError,
+      } = await supabase
+        .from("seat_assignments")
+        .select("id")
+        .eq("bus_id", bus.id)
+        .eq("event_id", event.id)
+        .eq("status", "occupied");
+
+      if (
+        remainingAssignmentsError ||
+        (remainingAssignments?.length ?? 0) > 0
+      ) {
+        return jsonResponse(
+          {
+            ok: false,
+            message:
+              remainingAssignmentsError?.message ??
+              "Seat assignments remain occupied after reset.",
+          },
+          409
+        );
       }
 
       return jsonResponse({
