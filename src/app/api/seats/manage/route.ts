@@ -858,7 +858,7 @@ export async function POST(
           {
             ok: false,
             message:
-              updateError.message ??
+              updateError?.message ??
               "Unable to save seat selection settings.",
           },
           409
@@ -1580,7 +1580,7 @@ export async function POST(
             {
               ok: false,
               message:
-                resetError.message ??
+                resetError?.message ??
                 "Unable to reset all seats.",
             },
             409
