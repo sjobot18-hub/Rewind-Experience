@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { organizeSeatMap, positionLabel } from "@/lib/seats";
 
 type SeatStatus = "available" | "occupied" | "disabled";
 
@@ -262,42 +263,80 @@ export default function PublicSeatsClient() {
         {mapLoading ? (
           <p className="mt-5 text-sm text-slate-600">Loading seats…</p>
         ) : (
-          <div className="mt-5 grid grid-cols-4 gap-2 sm:grid-cols-6">
-            {seats.map((seat) => {
-              const isOwnSeat = verification?.selectedSeat === seat.seat_number;
-              const isPending = pendingSeat?.seat_id === seat.seat_id;
-              const canSelect = Boolean(verification?.seatSelectionOpen) && seat.status === "available" && (!hasExistingSeat || Boolean(verification?.canChangeSeats));
-              const label = isPending ? "Selected" : isOwnSeat ? "Your seat" : seat.status;
-              const seatClass = isPending
-                ? "border-sky-600 bg-sky-50"
-                : isOwnSeat
-                  ? "border-emerald-600 bg-emerald-50"
-                  : seat.status === "available"
-                    ? "border-emerald-200 bg-white"
-                    : seat.status === "disabled"
-                      ? "border-slate-300 bg-slate-100"
-                      : "border-rose-200 bg-rose-50";
-
+          <div className="mt-5 overflow-x-auto">
+            {(() => {
+              const layout = organizeSeatMap(seats);
               return (
-                <button
-                  className={`min-h-20 rounded-lg border p-2 text-center disabled:cursor-not-allowed disabled:opacity-70 ${seatClass}`}
-                  disabled={!canSelect || confirming}
-                  key={seat.seat_id}
-                  onClick={() => chooseSeat(seat)}
-                  type="button"
-                >
-                  <span className="block text-lg font-black text-slate-900">{seat.seat_number}</span>
-                  <span className="block text-xs font-semibold capitalize text-slate-600">
-                    {label}
-                  </span>
-                  {seat.status === "occupied" && seat.guest_name && (
-                    <span className="mt-1 block text-xs font-medium text-slate-700">
-                      {seat.guest_name}
-                    </span>
+                <div className="inline-flex flex-col items-center min-w-[300px] mx-auto">
+                  {layout.frontSeat && (
+                    <div className="mb-4 flex flex-col items-center">
+                      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">
+                        FRONT / DRIVER
+                      </div>
+                      <div
+                        className="rounded-lg border-2 border-navy bg-navy px-8 py-3 text-center"
+                      >
+                        <span className="block text-xl font-black text-white">{layout.frontSeat.seat_number}</span>
+                        <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-300">
+                          Front Passenger
+                        </span>
+                      </div>
+                    </div>
                   )}
-                </button>
+
+                  {layout.rows.map((row) => (
+                    <div key={row.row_number} className="mb-3 flex flex-col items-center">
+                      <div className="flex gap-1.5 sm:gap-2">
+                        {row.seats.map((seat: any) => {
+                          const pos = seat.position_in_row;
+                          const label = positionLabel(pos);
+                          const isOwnSeat = verification?.selectedSeat === seat.seat_number;
+                          const isPending = pendingSeat?.seat_id === seat.seat_id;
+                          const canSelect = Boolean(verification?.seatSelectionOpen) && seat.status === "available" && (!hasExistingSeat || Boolean(verification?.canChangeSeats));
+                          const displayLabel = isPending ? "Selected" : isOwnSeat ? "Your seat" : seat.status;
+                          const seatClass = isPending
+                            ? "border-sky-600 bg-sky-50"
+                            : isOwnSeat
+                              ? "border-emerald-600 bg-emerald-50"
+                              : seat.status === "available"
+                                ? "border-emerald-200 bg-white"
+                                : seat.status === "disabled"
+                                  ? "border-slate-300 bg-slate-100"
+                                  : "border-rose-200 bg-rose-50";
+
+                          return (
+                            <div key={seat.seat_id} className="flex flex-col items-center">
+                              <button
+                                className={`w-[52px] h-[58px] sm:w-[64px] sm:h-[72px] rounded-lg border-2 p-1 text-center disabled:cursor-not-allowed disabled:opacity-70 ${seatClass}`}
+                                disabled={!canSelect || confirming}
+                                onClick={() => chooseSeat(seat)}
+                                type="button"
+                              >
+                                <span className="block text-sm sm:text-base font-black text-slate-900 leading-tight">{seat.seat_number}</span>
+                                <span className="block text-[8px] sm:text-[9px] font-semibold capitalize text-slate-500 leading-tight mt-0.5">
+                                  {displayLabel}
+                                </span>
+                                {seat.status === "occupied" && seat.guest_name && (
+                                  <span className="block text-[8px] sm:text-[9px] font-medium text-slate-700 truncate max-w-full leading-tight">
+                                    {seat.guest_name}
+                                  </span>
+                                )}
+                              </button>
+                              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">
+                                {label}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="text-[10px] font-bold text-slate-400 mt-0.5">
+                        Row {row.row_number}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               );
-            })}
+            })()}
           </div>
         )}
 

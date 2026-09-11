@@ -6,6 +6,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { organizeSeatMap, positionLabel } from "@/lib/seats";
 
 export default function BusSeatManagementClient({
   event,
@@ -864,76 +865,76 @@ export default function BusSeatManagementClient({
           </span>
         </div>
 
-        <div className="mt-4 grid grid-cols-5 md:grid-cols-7 gap-2 seat-grid">
-          {seats.map(
-            (seat) => (
-              <div
-                key={
-                  seat.seat_id
-                }
-                className="seat-card"
-              >
-                <div className="seat-number">
-                  {
-                    seat.seat_number
-                  }
-                </div>
+        <div className="mt-4">
+          {(() => {
+            const layout = organizeSeatMap(seats);
+            return (
+              <div className="inline-flex flex-col items-center">
+                {layout.frontSeat && (
+                  <div className="mb-4 flex flex-col items-center">
+                    <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">
+                      FRONT / DRIVER
+                    </div>
+                    <div className="rounded-lg border-2 border-navy bg-navy px-8 py-3 text-center">
+                      <div className="seat-number" style={{ color: "#fff" }}>
+                        {layout.frontSeat.seat_number}
+                      </div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-300">
+                        Front Passenger
+                      </div>
+                    </div>
+                  </div>
+                )}
 
-                <div
-                  className={`seat-status ${seat.status}`}
-                >
-                  {
-                    seat.status
-                  }
-                </div>
-
-                <div className="seat-name">
-                  {
-                    seat.display_name
-                  }
-                </div>
-
-                <div className="seat-actions">
-                  {seat.status ===
-                    "occupied" && (
-                    <button
-                      type="button"
-                      className="admin-seat-btn release"
-                      disabled={
-                        busySeatId ===
-                        seat.seat_id
-                      }
-                      onClick={() =>
-                        releaseSeat(
-                          seat
-                        )
-                      }
-                    >
-                      {busySeatId ===
-                      seat.seat_id
-                        ? "Releasing..."
-                        : "Release"}
-                    </button>
-                  )}
-
-                  {seat.status ===
-                    "available" && (
-                    <button
-                      type="button"
-                      className="admin-seat-btn assign"
-                      onClick={() =>
-                        openAssign(
-                          seat
-                        )
-                      }
-                    >
-                      Assign
-                    </button>
-                  )}
-                </div>
+                {layout.rows.map((row) => (
+                  <div key={row.row_number} className="mb-3 flex flex-col items-center">
+                    <div className="flex gap-1.5 sm:gap-2">
+                      {row.seats.map((seat: any) => {
+                        const pos = seat.position_in_row;
+                        const label = positionLabel(pos);
+                        return (
+                          <div key={seat.seat_id} className="flex flex-col items-center">
+                            <div className="seat-card">
+                              <div className="seat-number">{seat.seat_number}</div>
+                              <div className={`seat-status ${seat.status}`}>{seat.status}</div>
+                              <div className="seat-name">{seat.display_name}</div>
+                              <div className="seat-actions">
+                                {seat.status === "occupied" && (
+                                  <button
+                                    type="button"
+                                    className="admin-seat-btn release"
+                                    disabled={busySeatId === seat.seat_id}
+                                    onClick={() => releaseSeat(seat)}
+                                  >
+                                    {busySeatId === seat.seat_id ? "Releasing..." : "Release"}
+                                  </button>
+                                )}
+                                {seat.status === "available" && (
+                                  <button
+                                    type="button"
+                                    className="admin-seat-btn assign"
+                                    onClick={() => openAssign(seat)}
+                                  >
+                                    Assign
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">
+                              {label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="text-[10px] font-bold text-slate-400 mt-0.5">
+                      Row {row.row_number}
+                    </div>
+                  </div>
+                ))}
               </div>
-            )
-          )}
+            );
+          })()}
         </div>
       </div>
 
@@ -1252,22 +1253,40 @@ export default function BusSeatManagementClient({
         }
 
         @media (max-width: 640px) {
-          .seat-grid {
-            grid-template-columns: repeat(
-              5,
-              minmax(48px, 1fr)
-            );
-            gap: 6px;
+          .seat-card {
+            min-height: 72px;
+            padding: 5px 4px;
+            border-radius: 8px;
           }
 
-          .seat-card {
-            min-height: 88px;
-            padding: 6px;
+          .seat-number {
+            font-size: 12px;
+          }
+
+          .seat-status {
+            font-size: 7px;
           }
 
           .seat-name {
-            font-size: 9px;
-            max-width: 42px;
+            font-size: 7px;
+            max-width: 36px;
+          }
+
+          .seat-actions {
+            margin-top: 3px;
+            gap: 2px;
+          }
+
+          .admin-seat-btn {
+            padding: 2px 6px;
+            font-size: 7px;
+            min-height: 18px;
+            border-radius: 6px;
+          }
+
+          .seat-map-card {
+            overflow-x: auto;
+            min-width: 340px;
           }
         }
       `}</style>

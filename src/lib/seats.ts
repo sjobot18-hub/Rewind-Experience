@@ -46,6 +46,47 @@ export async function getPermanentBigCostaBus(supabase: ReturnType<typeof create
   return rows[0] ?? null;
 }
 
+export function positionLabel(position: number | null | undefined): "Window" | "Middle" | "Aisle" | "" {
+  if (position === undefined || position === null) return "";
+  if (position === 1 || position === 5) return "Window";
+  if (position === 2 || position === 4) return "Middle";
+  if (position === 3) return "Aisle";
+  return "";
+}
+
+export interface SeatRowData {
+  row_number: number;
+  seats: any[];
+}
+
+export interface SeatLayout {
+  frontSeat: any | null;
+  rows: SeatRowData[];
+}
+
+export function organizeSeatMap(seats: any[]): SeatLayout {
+  const frontSeat = seats.find((s: any) => s.row_number === 0) ?? null;
+  const passengerSeats = seats.filter((s: any) => s.row_number !== 0);
+
+  const rowsMap = new Map<number, any[]>();
+  for (const seat of passengerSeats) {
+    const row = seat.row_number;
+    if (!rowsMap.has(row)) {
+      rowsMap.set(row, []);
+    }
+    rowsMap.get(row)!.push(seat);
+  }
+
+  const rows: SeatRowData[] = [];
+  const sortedRowNumbers = [...rowsMap.keys()].sort((a, b) => a - b);
+  for (const rowNum of sortedRowNumbers) {
+    const sortedSeats = rowsMap.get(rowNum)!.sort((a: any, b: any) => a.position_in_row - b.position_in_row);
+    rows.push({ row_number: rowNum, seats: sortedSeats });
+  }
+
+  return { frontSeat, rows };
+}
+
 export function getGuestFullName(value: unknown): string {
   if (typeof value === "string") {
     return value.trim();
