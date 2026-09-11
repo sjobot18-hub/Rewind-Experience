@@ -18,6 +18,11 @@ export async function getPermanentBigCostaBus(supabase: ReturnType<typeof create
     return null;
   }
 
+  const explicitlyPermanent = rows.find((bus: any) => bus?.is_permanent === true) ?? null;
+  if (explicitlyPermanent) {
+    return explicitlyPermanent;
+  }
+
   const scored = [] as Array<{ bus: any; seatCount: number }>;
   for (const bus of rows) {
     const { data: seats, error: seatCountError } = await supabase
@@ -36,11 +41,6 @@ export async function getPermanentBigCostaBus(supabase: ReturnType<typeof create
 
   if (permanent?.bus) {
     return permanent.bus;
-  }
-
-  const explicitlyPermanent = rows.find((bus: any) => bus?.is_permanent === true) ?? null;
-  if (explicitlyPermanent) {
-    return explicitlyPermanent;
   }
 
   return rows[0] ?? null;
@@ -73,14 +73,15 @@ export function normalizePaymentId(input: string) {
     .toUpperCase()
     .replace(/[^A-Z0-9-]/g, "");
 
-  if (!cleaned) return { code: "", publicId: "" };
+  if (!cleaned) return { paymentCode: "", publicId: "" };
 
-  // Public verification accepts only the random public format PAY-<6 digits>.
-  // The internal payment_code is never the public credential and is never
-  // accepted by the public verification or seat portal inputs.
   const publicId = /^PAY-\d{6}$/.test(cleaned) ? cleaned : "";
+  const paymentCode = cleaned.replace(/-/g, "");
 
-  return { code: "", publicId };
+  return {
+    paymentCode: /^PAY\d+$/.test(paymentCode) ? paymentCode : "",
+    publicId,
+  };
 }
 
 export function normalizeReceiptCode(input: string) {
@@ -95,14 +96,25 @@ export function normalizeReceiptCode(input: string) {
 export async function findPaymentByPublicOrReceiptIdentifier(supabase: ReturnType<typeof createAdminClient>, rawIdentifier: string) {
   const reference = normalizePaymentId(rawIdentifier);
 
-  if (!reference.publicId) {
+  if (!reference.publicId && !reference.paymentCode) {
     return null;
   }
 
   const query = supabase
     .from("payments")
     .select("*, guests:guest_id(full_name, guest_code, id), events:event_id(name, year, id, seat_selection_open, seat_selection_deadline, allow_member_seat_changes)")
-    .eq("public_payment_id", reference.publicId);
+    .or(
+      [
+        reference.publicId
+          ? `public_payment_id.ilike.${reference.publicId}`
+          : "",
+        reference.paymentCode
+          ? `payment_code.ilike.${reference.paymentCode}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(",")
+    );
 
   const lookupRows = await query.maybeSingle();
   if (!lookupRows.error && lookupRows.data) {

@@ -9,6 +9,7 @@ type Seat = {
   seat_number: string;
   status: SeatStatus;
   is_disabled: boolean;
+  guest_name?: string | null;
 };
 
 type MapResponse = {
@@ -289,6 +290,11 @@ export default function PublicSeatsClient() {
                   <span className="block text-xs font-semibold capitalize text-slate-600">
                     {label}
                   </span>
+                  {seat.status === "occupied" && seat.guest_name && (
+                    <span className="mt-1 block text-xs font-medium text-slate-700">
+                      {seat.guest_name}
+                    </span>
+                  )}
                 </button>
               );
             })}

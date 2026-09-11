@@ -45,7 +45,7 @@ export async function POST(
       .trim()
       .toUpperCase();
 
-    if (!reference.publicId) {
+    if (!reference.publicId && !reference.paymentCode) {
       return jsonResponse(
         {
           ok: false,
@@ -81,9 +81,17 @@ export async function POST(
       .select(
         "*, guests:guest_id(*), events:event_id(*)"
       )
-      .eq(
-        "public_payment_id",
-        reference.publicId
+      .or(
+        [
+          reference.publicId
+            ? `public_payment_id.ilike.${reference.publicId}`
+            : "",
+          reference.paymentCode
+            ? `payment_code.ilike.${reference.paymentCode}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(",")
       )
       .maybeSingle();
 
@@ -274,7 +282,7 @@ export async function POST(
       return jsonResponse(
         {
           ok: false,
-          message: "This payment is not linked to the event that controls the permanent Big Costa seat map.",
+          message: "Payment belongs to a different event.",
         },
         409
       );
