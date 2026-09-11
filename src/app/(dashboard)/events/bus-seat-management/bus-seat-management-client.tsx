@@ -13,19 +13,14 @@ export default function BusSeatManagementClient({
   isOwner,
   permissions,
 }: any) {
-  const [open, setOpen] = useState(
-    Boolean(event?.seat_selection_open)
-  );
+  const [open, setOpen] =
+    useState(false);
 
   const [deadline, setDeadline] =
-    useState(
-      event?.seat_selection_deadline ??
-        ""
-    );
+    useState("");
 
-  const [seats, setSeats] = useState<
-    any[]
-  >([]);
+  const [seats, setSeats] =
+    useState<any[]>([]);
 
   const [
     eligibleGuests,
@@ -41,17 +36,23 @@ export default function BusSeatManagementClient({
   const [
     busySeatId,
     setBusySeatId,
-  ] = useState<string | null>(null);
+  ] = useState<string | null>(
+    null
+  );
 
   const [
     message,
     setMessage,
-  ] = useState<string | null>(null);
+  ] = useState<string | null>(
+    null
+  );
 
   const [
     selectedSeat,
     setSelectedSeat,
-  ] = useState<any | null>(null);
+  ] = useState<any | null>(
+    null
+  );
 
   const [
     guestQuery,
@@ -69,15 +70,18 @@ export default function BusSeatManagementClient({
   ] = useState(false);
 
   /*
-   * Convert an ISO database datetime into
-   * the value required by <input type="datetime-local">.
+   * Convert database ISO datetime into
+   * the browser's datetime-local value.
    */
   function formatDateTimeLocal(
-    value: string
+    value: string | null | undefined
   ) {
-    if (!value) return "";
+    if (!value) {
+      return "";
+    }
 
-    const date = new Date(value);
+    const date =
+      new Date(value);
 
     if (
       Number.isNaN(
@@ -93,7 +97,9 @@ export default function BusSeatManagementClient({
     const localTime =
       new Date(
         date.getTime() -
-          offset * 60 * 1000
+          offset *
+            60 *
+            1000
       );
 
     return localTime
@@ -102,86 +108,100 @@ export default function BusSeatManagementClient({
   }
 
   /*
-   * Load the permanent Big Costa seat map.
+   * ALWAYS load the state from the API.
    *
-   * IMPORTANT:
-   * There is deliberately no event_id in this request.
-   * The API determines the permanent Big Costa bus
-   * and its attached event itself.
+   * Do not initialise seat-selection state
+   * from the page's event prop because the page
+   * event may not be the event controlling the
+   * permanent Big Costa bus.
    */
   const loadSeatMap =
-    useCallback(async () => {
-      try {
-        setLoading(true);
+    useCallback(
+      async () => {
+        try {
+          setLoading(true);
 
-        const response =
-          await fetch(
-            "/api/seats/manage",
-            {
-              method: "GET",
-              cache: "no-store",
-            }
+          const response =
+            await fetch(
+              "/api/seats/manage",
+              {
+                method:
+                  "GET",
+                cache:
+                  "no-store",
+                headers: {
+                  "Cache-Control":
+                    "no-cache",
+                },
+              }
+            );
+
+          const json =
+            await response.json();
+
+          if (
+            !response.ok ||
+            !json.ok
+          ) {
+            setMessage(
+              json.message ??
+                "Unable to refresh seat map."
+            );
+            return;
+          }
+
+          /*
+           * The API response is now the
+           * authoritative source.
+           */
+          if (
+            json.event
+          ) {
+            setOpen(
+              Boolean(
+                json.event
+                  .seat_selection_open
+              )
+            );
+
+            setDeadline(
+              json.event
+                .seat_selection_deadline ??
+                ""
+            );
+          }
+
+          setSeats(
+            Array.isArray(
+              json.seats
+            )
+              ? json.seats
+              : []
           );
 
-        const json =
-          await response.json();
+          setEligibleGuests(
+            Array.isArray(
+              json.eligibleGuests
+            )
+              ? json.eligibleGuests
+              : []
+          );
 
-        if (
-          !response.ok ||
-          !json.ok
-        ) {
+          setMessage(null);
+        } catch (error: any) {
           setMessage(
-            json.message ??
+            error?.message ??
               "Unable to refresh seat map."
           );
-          return;
+        } finally {
+          setLoading(false);
         }
-
-        /*
-         * Always trust the database response.
-         * This prevents the interface from showing
-         * Open while the database is Closed, or vice versa.
-         */
-        if (json.event) {
-          setOpen(
-            Boolean(
-              json.event
-                .seat_selection_open
-            )
-          );
-
-          setDeadline(
-            json.event
-              .seat_selection_deadline ??
-              ""
-          );
-        }
-
-        setSeats(
-          json.seats ?? []
-        );
-
-        setEligibleGuests(
-          json.eligibleGuests ??
-            []
-        );
-
-        setMessage(null);
-      } catch (error: any) {
-        setMessage(
-          error?.message ??
-            "Unable to refresh seat map."
-        );
-      } finally {
-        setLoading(false);
-      }
-    }, []);
+      },
+      []
+    );
 
   /*
-   * Initial database load.
-   *
-   * The physical Big Costa map is permanent,
-   * so this does not depend on event?.id.
+   * Initial load.
    */
   useEffect(() => {
     loadSeatMap();
@@ -206,9 +226,11 @@ export default function BusSeatManagementClient({
             guest.public_payment_id ??
             ""
           } ${
-            guest.payment_code ?? ""
+            guest.payment_code ??
+            ""
           } ${
-            guest.payment_id ?? ""
+            guest.payment_id ??
+            ""
           }`
             .toLowerCase()
             .includes(query);
@@ -221,14 +243,15 @@ export default function BusSeatManagementClient({
 
   /*
    * OPEN / CLOSE SEAT SELECTION
-   *
-   * The API determines the correct event from
-   * the permanent Big Costa bus.
    */
   async function updateSeatSelection(
     nextOpen: boolean,
     nextDeadline: string
   ) {
+    if (saving) {
+      return;
+    }
+
     setSaving(true);
     setMessage(null);
 
@@ -257,10 +280,6 @@ export default function BusSeatManagementClient({
           return;
         }
 
-        /*
-         * Convert the browser's local datetime
-         * to a timezone-safe ISO value before sending.
-         */
         deadlineValue =
           date.toISOString();
       }
@@ -269,20 +288,25 @@ export default function BusSeatManagementClient({
         await fetch(
           "/api/seats/manage",
           {
-            method: "POST",
+            method:
+              "POST",
             headers: {
               "Content-Type":
                 "application/json",
+              "Cache-Control":
+                "no-cache",
             },
-            cache: "no-store",
-            body: JSON.stringify({
-              action:
-                "seat_selection",
-              seat_selection_open:
-                nextOpen,
-              seat_selection_deadline:
-                deadlineValue,
-            }),
+            cache:
+              "no-store",
+            body:
+              JSON.stringify({
+                action:
+                  "seat_selection",
+                seat_selection_open:
+                  nextOpen,
+                seat_selection_deadline:
+                  deadlineValue,
+              }),
           }
         );
 
@@ -301,9 +325,15 @@ export default function BusSeatManagementClient({
       }
 
       /*
-       * Use the actual saved database state.
+       * DO NOT simply set the UI to nextOpen.
+       *
+       * Use the actual value returned from
+       * the database after the server has
+       * written and verified it.
        */
-      if (json.event) {
+      if (
+        json.event
+      ) {
         setOpen(
           Boolean(
             json.event
@@ -316,23 +346,21 @@ export default function BusSeatManagementClient({
             .seat_selection_deadline ??
             ""
         );
-      } else {
-        setOpen(nextOpen);
-        setDeadline(
-          deadlineValue ?? ""
-        );
       }
 
       setMessage(
         json.message ??
-          (nextOpen
+          (json.event
+            ?.seat_selection_open
             ? "Seat selection is now open."
             : "Seat selection is now closed.")
       );
 
       /*
-       * Force another database read so the entire
-       * admin interface is synchronized.
+       * Read the database one more time.
+       *
+       * This guarantees the screen is showing
+       * the same state that a page refresh will show.
        */
       await loadSeatMap();
     } catch (error: any) {
@@ -346,7 +374,7 @@ export default function BusSeatManagementClient({
   }
 
   /*
-   * RESET ALL PERMANENT BIG COSTA SEATS
+   * RESET ALL SEATS
    */
   async function resetAllSeats() {
     const confirmed =
@@ -368,16 +396,21 @@ export default function BusSeatManagementClient({
         await fetch(
           "/api/seats/manage",
           {
-            method: "POST",
+            method:
+              "POST",
             headers: {
               "Content-Type":
                 "application/json",
+              "Cache-Control":
+                "no-cache",
             },
-            cache: "no-store",
-            body: JSON.stringify({
-              action:
-                "reset_all_seats",
-            }),
+            cache:
+              "no-store",
+            body:
+              JSON.stringify({
+                action:
+                  "reset_all_seats",
+              }),
           }
         );
 
@@ -400,15 +433,12 @@ export default function BusSeatManagementClient({
       setGuestQuery("");
 
       setMessage(
-        json.releasedCount !==
-          undefined
-          ? `${json.releasedCount} Big Costa seat assignment${
-              json.releasedCount ===
-              1
-                ? ""
-                : "s"
-            } released.`
-          : "All Big Costa seat assignments have been released."
+        `${json.releasedCount ?? 0} Big Costa seat assignment${
+          json.releasedCount ===
+          1
+            ? ""
+            : "s"
+        } released.`
       );
 
       await loadSeatMap();
@@ -423,7 +453,7 @@ export default function BusSeatManagementClient({
   }
 
   /*
-   * RELEASE ONE OCCUPIED SEAT
+   * RELEASE ONE SEAT
    */
   async function releaseSeat(
     seat: any
@@ -459,18 +489,23 @@ export default function BusSeatManagementClient({
         await fetch(
           "/api/seats/manage",
           {
-            method: "POST",
+            method:
+              "POST",
             headers: {
               "Content-Type":
                 "application/json",
+              "Cache-Control":
+                "no-cache",
             },
-            cache: "no-store",
-            body: JSON.stringify({
-              action:
-                "release",
-              seat_id:
-                seat.seat_id,
-            }),
+            cache:
+              "no-store",
+            body:
+              JSON.stringify({
+                action:
+                  "release",
+                seat_id:
+                  seat.seat_id,
+              }),
           }
         );
 
@@ -517,14 +552,21 @@ export default function BusSeatManagementClient({
       return;
     }
 
-    setSelectedSeat(seat);
-    setSelectedGuestId("");
+    setSelectedSeat(
+      seat
+    );
+
+    setSelectedGuestId(
+      ""
+    );
+
     setGuestQuery("");
+
     setMessage(null);
   }
 
   /*
-   * CONFIRM MANUAL ADMIN ASSIGNMENT
+   * CONFIRM ADMIN ASSIGNMENT
    */
   async function confirmAssign() {
     if (
@@ -568,22 +610,27 @@ export default function BusSeatManagementClient({
         await fetch(
           "/api/seats/manage",
           {
-            method: "POST",
+            method:
+              "POST",
             headers: {
               "Content-Type":
                 "application/json",
+              "Cache-Control":
+                "no-cache",
             },
-            cache: "no-store",
-            body: JSON.stringify({
-              action:
-                "assign",
-              seat_id:
-                selectedSeat.seat_id,
-              guest_id:
-                selectedGuestId,
-              payment_id:
-                guest.payment_id,
-            }),
+            cache:
+              "no-store",
+            body:
+              JSON.stringify({
+                action:
+                  "assign",
+                seat_id:
+                  selectedSeat.seat_id,
+                guest_id:
+                  selectedGuestId,
+                payment_id:
+                  guest.payment_id,
+              }),
           }
         );
 
@@ -594,18 +641,12 @@ export default function BusSeatManagementClient({
         !response.ok ||
         !json.ok
       ) {
-        if (
+        setMessage(
           json.existingSeat
-        ) {
-          setMessage(
-            `This member already has seat ${json.existingSeat}.`
-          );
-        } else {
-          setMessage(
-            json.message ??
+            ? `This member already has seat ${json.existingSeat}.`
+            : json.message ??
               "Unable to assign seat."
-          );
-        }
+        );
 
         return;
       }
@@ -614,8 +655,14 @@ export default function BusSeatManagementClient({
         `Seat ${selectedSeat.seat_number} assigned to ${guest.full_name}.`
       );
 
-      setSelectedSeat(null);
-      setSelectedGuestId("");
+      setSelectedSeat(
+        null
+      );
+
+      setSelectedGuestId(
+        ""
+      );
+
       setGuestQuery("");
 
       await loadSeatMap();
@@ -707,6 +754,7 @@ export default function BusSeatManagementClient({
 
             <div className="flex gap-2 mt-2">
               <button
+                type="button"
                 className="btn-primary btn-xs"
                 disabled={
                   saving ||
@@ -723,6 +771,7 @@ export default function BusSeatManagementClient({
               </button>
 
               <button
+                type="button"
                 className="btn-secondary btn-xs"
                 disabled={
                   saving ||
@@ -761,8 +810,11 @@ export default function BusSeatManagementClient({
 
           <div>
             <button
+              type="button"
               className="btn-primary w-full"
-              disabled={saving}
+              disabled={
+                saving
+              }
               onClick={() =>
                 updateSeatSelection(
                   open,
@@ -798,8 +850,11 @@ export default function BusSeatManagementClient({
             </span>
 
             <button
+              type="button"
               className="btn-secondary btn-xs"
-              disabled={loading}
+              disabled={
+                loading
+              }
               onClick={
                 resetAllSeats
               }
@@ -842,6 +897,7 @@ export default function BusSeatManagementClient({
                   {seat.status ===
                     "occupied" && (
                     <button
+                      type="button"
                       className="admin-seat-btn release"
                       disabled={
                         busySeatId ===
@@ -863,6 +919,7 @@ export default function BusSeatManagementClient({
                   {seat.status ===
                     "available" && (
                     <button
+                      type="button"
                       className="admin-seat-btn assign"
                       onClick={() =>
                         openAssign(
@@ -898,6 +955,7 @@ export default function BusSeatManagementClient({
               </div>
 
               <button
+                type="button"
                 className="btn-secondary btn-xs"
                 onClick={() =>
                   setSelectedSeat(
@@ -925,6 +983,7 @@ export default function BusSeatManagementClient({
                 />
 
                 <button
+                  type="button"
                   className="btn-primary btn-sm"
                   disabled={
                     !selectedGuestId ||
@@ -1037,6 +1096,7 @@ export default function BusSeatManagementClient({
                       </div>
 
                       <button
+                        type="button"
                         className="btn-secondary btn-xs"
                         disabled={
                           assigning

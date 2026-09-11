@@ -10,11 +10,22 @@ import {
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function authorizeAdmin(permissions: string[], isOwner: boolean) {
+function authorizeAdmin(
+  permissions: string[],
+  isOwner: boolean
+) {
   return (
     isOwner ||
-    can(permissions as any, isOwner, "manage_seats") ||
-    can(permissions as any, isOwner, "manage_event_settings")
+    can(
+      permissions as any,
+      isOwner,
+      "manage_seats"
+    ) ||
+    can(
+      permissions as any,
+      isOwner,
+      "manage_event_settings"
+    )
   );
 }
 
@@ -33,14 +44,92 @@ function jsonResponse(
   });
 }
 
-export async function GET(request: Request) {
+async function getPermanentBusAndEvent(
+  supabase: ReturnType<typeof createAdminClient>
+) {
+  const bus =
+    await getPermanentBigCostaBus(
+      supabase
+    );
+
+  if (!bus) {
+    return {
+      bus: null,
+      event: null,
+      error:
+        "Big Costa bus is not configured for the permanent seat map.",
+    };
+  }
+
+  if (!bus.event_id) {
+    return {
+      bus,
+      event: null,
+      error:
+        "The permanent Big Costa bus is not linked to an event.",
+    };
+  }
+
+  const {
+    data: event,
+    error: eventError,
+  } = await supabase
+    .from("events")
+    .select(
+      "id, name, year, event_date, seat_selection_open, seat_selection_deadline, allow_member_seat_changes"
+    )
+    .eq(
+      "id",
+      bus.event_id
+    )
+    .maybeSingle();
+
+  if (eventError) {
+    return {
+      bus,
+      event: null,
+      error: eventError.message,
+    };
+  }
+
+  if (!event) {
+    return {
+      bus,
+      event: null,
+      error:
+        "The event linked to the permanent Big Costa bus could not be found.",
+    };
+  }
+
+  return {
+    bus,
+    event,
+    error: null,
+  };
+}
+
+export async function GET(
+  request: Request
+) {
   try {
-    const supabase = createAdminClient();
+    const supabase =
+      createAdminClient();
 
-    if (process.env.NODE_ENV !== "development") {
-      const { permissions, isOwner } = await getCurrentAdmin();
+    if (
+      process.env.NODE_ENV !==
+      "development"
+    ) {
+      const {
+        permissions,
+        isOwner,
+      } = await getCurrentAdmin();
 
-      if (!authorizeAdmin(permissions, isOwner)) {
+      if (
+        !authorizeAdmin(
+          permissions,
+          isOwner
+        )
+      ) {
         return jsonResponse(
           {
             ok: false,
@@ -51,61 +140,32 @@ export async function GET(request: Request) {
       }
     }
 
-    /*
-     * BIG COSTA IS A PERMANENT PHYSICAL SEAT MAP.
-     *
-     * We deliberately do NOT use the requested event_id from the URL
-     * to decide which bus or which seats to load.
-     *
-     * The permanent Big Costa bus determines the event whose seat
-     * selection settings and member records are being managed.
-     */
-    const bus = await getPermanentBigCostaBus(supabase);
+    const {
+      bus,
+      event,
+      error,
+    } =
+      await getPermanentBusAndEvent(
+        supabase
+      );
 
-    if (!bus) {
+    if (error || !bus) {
       return jsonResponse(
         {
           ok: false,
           message:
-            "Big Costa bus not configured for the permanent seat map.",
+            error ??
+            "Big Costa bus not configured.",
         },
         404
       );
     }
 
-    const eventId = bus.event_id ?? null;
-
-    let event: any = null;
-
-    if (eventId) {
-      const {
-        data: eventRow,
-        error: eventError,
-      } = await supabase
-        .from("events")
-        .select(
-          "id, name, year, event_date, seat_selection_open, seat_selection_deadline, allow_member_seat_changes"
-        )
-        .eq("id", eventId)
-        .maybeSingle();
-
-      if (eventError) {
-        return jsonResponse(
-          {
-            ok: false,
-            message:
-              eventError.message ??
-              "Unable to load event.",
-          },
-          500
-        );
-      }
-
-      event = eventRow;
-    }
+    const eventId =
+      event?.id ?? null;
 
     /*
-     * LOAD THE PERMANENT 36-SEAT MAP.
+     * PERMANENT BIG COSTA SEATS
      */
     const {
       data: seatsData,
@@ -113,13 +173,22 @@ export async function GET(request: Request) {
     } = await supabase
       .from("bus_seats")
       .select("*")
-      .eq("bus_id", bus.id)
-      .order("row_number", {
-        ascending: true,
-      })
-      .order("position_in_row", {
-        ascending: true,
-      });
+      .eq(
+        "bus_id",
+        bus.id
+      )
+      .order(
+        "row_number",
+        {
+          ascending: true,
+        }
+      )
+      .order(
+        "position_in_row",
+        {
+          ascending: true,
+        }
+      );
 
     if (seatError) {
       return jsonResponse(
@@ -133,27 +202,36 @@ export async function GET(request: Request) {
       );
     }
 
-    const seats = Array.isArray(seatsData)
-      ? seatsData
-      : [];
+    const seats =
+      Array.isArray(seatsData)
+        ? seatsData
+        : [];
 
     /*
-     * ONLY CURRENT OCCUPIED ASSIGNMENTS ARE SHOWN
-     * AS OCCUPIED.
-     *
-     * Released assignments remain in the database for
-     * history, but they no longer block a seat.
+     * CURRENT OCCUPIED ASSIGNMENTS ONLY
      */
-    let assignmentQuery = supabase
-      .from("seat_assignments")
-      .select(
-        "*, guests:guest_id(full_name, guest_code, id), payments:payment_id(payment_code, public_payment_id, amount, is_voided, id), bus_seats:seat_id(*)"
-      )
-      .eq("bus_id", bus.id)
-      .eq("status", "occupied")
-      .order("updated_at", {
-        ascending: false,
-      });
+    let assignmentQuery =
+      supabase
+        .from(
+          "seat_assignments"
+        )
+        .select(
+          "*, guests:guest_id(full_name, guest_code, id), payments:payment_id(payment_code, public_payment_id, amount, is_voided, id), bus_seats:seat_id(*)"
+        )
+        .eq(
+          "bus_id",
+          bus.id
+        )
+        .eq(
+          "status",
+          "occupied"
+        )
+        .order(
+          "updated_at",
+          {
+            ascending: false,
+          }
+        );
 
     if (eventId) {
       assignmentQuery =
@@ -166,7 +244,8 @@ export async function GET(request: Request) {
     const {
       data: assignmentRows,
       error: assignmentError,
-    } = await assignmentQuery;
+    } =
+      await assignmentQuery;
 
     if (assignmentError) {
       return jsonResponse(
@@ -180,32 +259,33 @@ export async function GET(request: Request) {
       );
     }
 
-    const assignments = Array.isArray(
-      assignmentRows
-    )
-      ? assignmentRows
-      : [];
+    const assignments =
+      Array.isArray(
+        assignmentRows
+      )
+        ? assignmentRows
+        : [];
 
-    const assignmentBySeat = new Map<
-      string,
-      any
-    >();
+    const assignmentBySeat =
+      new Map<string, any>();
 
     for (const assignment of assignments) {
       if (
         assignment &&
-        assignment.status === "occupied" &&
+        assignment.status ===
+          "occupied" &&
         assignment.seat_id
       ) {
-        /*
-         * Because results are ordered newest first,
-         * keep the first active assignment for a seat.
-         */
-        const key = String(
-          assignment.seat_id
-        );
+        const key =
+          String(
+            assignment.seat_id
+          );
 
-        if (!assignmentBySeat.has(key)) {
+        if (
+          !assignmentBySeat.has(
+            key
+          )
+        ) {
           assignmentBySeat.set(
             key,
             assignment
@@ -214,99 +294,137 @@ export async function GET(request: Request) {
       }
     }
 
-    const seatRows = seats.map(
-      (seat: any) => {
-        const assignment =
-          assignmentBySeat.get(
-            String(seat.id)
-          );
+    const seatRows =
+      seats.map(
+        (seat: any) => {
+          const assignment =
+            assignmentBySeat.get(
+              String(seat.id)
+            );
 
-        const isDisabled = Boolean(
-          seat.is_disabled
-        );
+          const isDisabled =
+            Boolean(
+              seat.is_disabled
+            );
 
-        if (isDisabled) {
+          if (isDisabled) {
+            return {
+              seat_id:
+                seat.id,
+              seat_number:
+                seat.seat_number,
+              row_number:
+                seat.row_number,
+              position_in_row:
+                seat.position_in_row,
+              seat_type:
+                seat.seat_type,
+              status:
+                "disabled",
+              display_name:
+                "DISABLED",
+              is_disabled:
+                true,
+              guest_id:
+                null,
+              guest_name:
+                null,
+              assignment_id:
+                null,
+            };
+          }
+
+          if (!assignment) {
+            return {
+              seat_id:
+                seat.id,
+              seat_number:
+                seat.seat_number,
+              row_number:
+                seat.row_number,
+              position_in_row:
+                seat.position_in_row,
+              seat_type:
+                seat.seat_type,
+              status:
+                "available",
+              display_name:
+                "AVAILABLE",
+              is_disabled:
+                false,
+              guest_id:
+                null,
+              guest_name:
+                null,
+              assignment_id:
+                null,
+            };
+          }
+
+          const guestName =
+            getGuestFullName(
+              assignment.guests
+            );
+
           return {
-            seat_id: seat.id,
-            seat_number: seat.seat_number,
-            row_number: seat.row_number,
+            seat_id:
+              seat.id,
+            seat_number:
+              seat.seat_number,
+            row_number:
+              seat.row_number,
             position_in_row:
               seat.position_in_row,
-            seat_type: seat.seat_type,
-            status: "disabled",
-            display_name: "DISABLED",
-            is_disabled: true,
-            guest_id: null,
-            guest_name: null,
-            assignment_id: null,
+            seat_type:
+              seat.seat_type,
+            status:
+              "occupied",
+            display_name:
+              guestName ||
+              "Member",
+            is_disabled:
+              false,
+            guest_id:
+              assignment.guest_id ??
+              null,
+            guest_name:
+              guestName ||
+              null,
+            assignment_id:
+              assignment.id ??
+              null,
           };
         }
-
-        if (!assignment) {
-          return {
-            seat_id: seat.id,
-            seat_number: seat.seat_number,
-            row_number: seat.row_number,
-            position_in_row:
-              seat.position_in_row,
-            seat_type: seat.seat_type,
-            status: "available",
-            display_name: "AVAILABLE",
-            is_disabled: false,
-            guest_id: null,
-            guest_name: null,
-            assignment_id: null,
-          };
-        }
-
-        const guestName =
-          getGuestFullName(
-            assignment.guests
-          );
-
-        return {
-          seat_id: seat.id,
-          seat_number: seat.seat_number,
-          row_number: seat.row_number,
-          position_in_row:
-            seat.position_in_row,
-          seat_type: seat.seat_type,
-          status: "occupied",
-          display_name:
-            guestName || "Member",
-          is_disabled: false,
-          guest_id:
-            assignment.guest_id ?? null,
-          guest_name:
-            guestName || null,
-          assignment_id:
-            assignment.id ?? null,
-        };
-      }
-    );
+      );
 
     /*
-     * LOAD GUESTS FOR THE EVENT ASSOCIATED
-     * WITH THE PERMANENT BIG COSTA BUS.
+     * GUESTS BELONGING TO THE PERMANENT
+     * BIG COSTA EVENT
      */
-    let guestQuery = supabase
-      .from("guests")
-      .select("*")
-      .order("full_name", {
-        ascending: true,
-      });
+    let guestQuery =
+      supabase
+        .from("guests")
+        .select("*")
+        .order(
+          "full_name",
+          {
+            ascending: true,
+          }
+        );
 
     if (eventId) {
-      guestQuery = guestQuery.eq(
-        "event_id",
-        eventId
-      );
+      guestQuery =
+        guestQuery.eq(
+          "event_id",
+          eventId
+        );
     }
 
     const {
       data: guestRowsData,
       error: guestRowsError,
-    } = await guestQuery;
+    } =
+      await guestQuery;
 
     if (guestRowsError) {
       return jsonResponse(
@@ -320,39 +438,47 @@ export async function GET(request: Request) {
       );
     }
 
-    const guestRows = Array.isArray(
-      guestRowsData
-    )
-      ? guestRowsData
-      : [];
+    const guestRows =
+      Array.isArray(
+        guestRowsData
+      )
+        ? guestRowsData
+        : [];
 
     /*
-     * LOAD PAYMENTS FOR THE SAME EVENT.
-     *
-     * This keeps admin eligibility consistent
-     * with public verification.
+     * PAYMENTS FOR THE PERMANENT
+     * BIG COSTA EVENT
      */
-    let paymentQuery = supabase
-      .from("payments")
-      .select(
-        "*, guests:guest_id(full_name, guest_code, id)"
-      )
-      .eq("is_voided", false)
-      .order("paid_at", {
-        ascending: false,
-      });
+    let paymentQuery =
+      supabase
+        .from("payments")
+        .select(
+          "*, guests:guest_id(full_name, guest_code, id)"
+        )
+        .eq(
+          "is_voided",
+          false
+        )
+        .order(
+          "paid_at",
+          {
+            ascending: false,
+          }
+        );
 
     if (eventId) {
-      paymentQuery = paymentQuery.eq(
-        "event_id",
-        eventId
-      );
+      paymentQuery =
+        paymentQuery.eq(
+          "event_id",
+          eventId
+        );
     }
 
     const {
       data: paymentRowsData,
       error: paymentRowsError,
-    } = await paymentQuery;
+    } =
+      await paymentQuery;
 
     if (paymentRowsError) {
       return jsonResponse(
@@ -366,16 +492,12 @@ export async function GET(request: Request) {
       );
     }
 
-    const paymentRows = Array.isArray(
-      paymentRowsData
-    )
-      ? paymentRowsData
-      : [];
-
-    const eligibility = new Map<
-      string,
-      any
-    >();
+    const paymentRows =
+      Array.isArray(
+        paymentRowsData
+      )
+        ? paymentRowsData
+        : [];
 
     const activeAssignments =
       new Map<string, any>();
@@ -383,15 +505,21 @@ export async function GET(request: Request) {
     for (const assignment of assignments) {
       if (
         assignment &&
-        assignment.status === "occupied" &&
+        assignment.status ===
+          "occupied" &&
         assignment.guest_id
       ) {
         activeAssignments.set(
-          String(assignment.guest_id),
+          String(
+            assignment.guest_id
+          ),
           assignment
         );
       }
     }
+
+    const eligibility =
+      new Map<string, any>();
 
     for (const guest of guestRows) {
       if (!guest?.id) {
@@ -402,8 +530,10 @@ export async function GET(request: Request) {
         paymentRows.filter(
           (payment: any) =>
             payment &&
-            payment.guest_id === guest.id &&
-            payment.is_voided !== true
+            payment.guest_id ===
+              guest.id &&
+            payment.is_voided !==
+              true
         );
 
       const totalPaid =
@@ -412,13 +542,17 @@ export async function GET(request: Request) {
             sum: number,
             payment: any
           ) => {
-            const amount = Number(
-              payment?.amount ?? 0
-            );
+            const amount =
+              Number(
+                payment?.amount ??
+                  0
+              );
 
             return (
               sum +
-              (Number.isFinite(amount)
+              (Number.isFinite(
+                amount
+              )
                 ? amount
                 : 0)
             );
@@ -427,7 +561,8 @@ export async function GET(request: Request) {
         );
 
       const latestPayment =
-        guestPayments[0] ?? null;
+        guestPayments[0] ??
+        null;
 
       const activeSeat =
         activeAssignments.get(
@@ -435,22 +570,27 @@ export async function GET(request: Request) {
         );
 
       const seatNumber =
-        activeSeat?.bus_seats
-          ?.seat_number ?? null;
+        activeSeat
+          ?.bus_seats
+          ?.seat_number ??
+        null;
 
       eligibility.set(
         String(guest.id),
         {
           id: guest.id,
           guest_code:
-            guest.guest_code ?? null,
+            guest.guest_code ??
+            null,
           full_name:
             getGuestFullName(
               guest.full_name
             ),
-          total_paid: totalPaid,
+          total_paid:
+            totalPaid,
           payment_id:
-            latestPayment?.id ?? null,
+            latestPayment?.id ??
+            null,
           payment_code:
             latestPayment?.payment_code ??
             null,
@@ -458,7 +598,8 @@ export async function GET(request: Request) {
             latestPayment?.public_payment_id ??
             null,
           payment_amount:
-            latestPayment?.amount ?? 0,
+            latestPayment?.amount ??
+            0,
           payment_status:
             latestPayment
               ? "paid"
@@ -469,7 +610,8 @@ export async function GET(request: Request) {
           seat_assignment_status:
             activeSeat?.status ??
             "available",
-          seat_number: seatNumber,
+          seat_number:
+            seatNumber,
         }
       );
     }
@@ -482,22 +624,54 @@ export async function GET(request: Request) {
           (guest: any) =>
             guest.eligible
         )
-        .sort((a, b) =>
-          String(
-            a.full_name ?? ""
-          ).localeCompare(
+        .sort(
+          (a, b) =>
             String(
-              b.full_name ?? ""
+              a.full_name ??
+                ""
+            ).localeCompare(
+              String(
+                b.full_name ??
+                  ""
+              )
             )
-          )
         );
 
     return jsonResponse({
       ok: true,
-      event,
+
+      /*
+       * THIS IS THE IMPORTANT PART.
+       *
+       * The client receives the actual event
+       * that controls the permanent Big Costa
+       * seat-selection system.
+       */
+      event: {
+        id: event.id,
+        name: event.name,
+        year: event.year,
+        event_date:
+          event.event_date,
+        seat_selection_open:
+          Boolean(
+            event.seat_selection_open
+          ),
+        seat_selection_deadline:
+          event.seat_selection_deadline ??
+          null,
+        allow_member_seat_changes:
+          Boolean(
+            event.allow_member_seat_changes
+          ),
+      },
+
       bus,
+
       seats: seatRows,
+
       assignments,
+
       eligibleGuests,
     });
   } catch (error: any) {
@@ -521,7 +695,8 @@ export async function POST(
       profile,
       permissions,
       isOwner,
-    } = await getCurrentAdmin();
+    } =
+      await getCurrentAdmin();
 
     if (
       !authorizeAdmin(
@@ -538,68 +713,61 @@ export async function POST(
       );
     }
 
-    const body = await request.json();
-    const action = String(
-      body.action ?? ""
-    ).trim();
+    const body =
+      await request.json();
+
+    const action =
+      String(
+        body.action ?? ""
+      ).trim();
 
     const supabase =
       createAdminClient();
 
     /*
-     * Resolve the permanent Big Costa bus
-     * once for every seat-management action.
+     * ALWAYS resolve the permanent Big Costa
+     * bus and its controlling event from the
+     * database.
      */
-    const bus =
-      await getPermanentBigCostaBus(
+    const {
+      bus,
+      event,
+      error,
+    } =
+      await getPermanentBusAndEvent(
         supabase
       );
 
-    if (!bus) {
+    if (error || !bus) {
       return jsonResponse(
         {
           ok: false,
           message:
-            "Big Costa bus not configured for the permanent seat map.",
+            error ??
+            "Big Costa bus not configured.",
         },
         404
       );
     }
 
-    const permanentEventId =
-      bus.event_id ?? null;
-
     /*
-     * OPEN / CLOSE MEMBER SEAT SELECTION
-     *
-     * IMPORTANT:
-     * The old implementation created an update object
-     * but never wrote it to Supabase.
-     *
-     * This version deliberately uses the event attached
-     * to the permanent Big Costa bus instead of trusting
-     * a possibly stale event_id from the browser.
+     * ==================================================
+     * OPEN / CLOSE SEAT SELECTION
+     * ==================================================
      */
     if (
       action ===
       "seat_selection"
     ) {
-      if (!permanentEventId) {
-        return jsonResponse(
-          {
-            ok: false,
-            message:
-              "The permanent Big Costa bus is not linked to an event.",
-          },
-          409
-        );
-      }
-
       const update: Record<
         string,
         any
       > = {};
 
+      /*
+       * The OPEN/CLOSE value must be explicitly
+       * supplied by the client.
+       */
       if (
         typeof body.seat_selection_open ===
         "boolean"
@@ -608,29 +776,17 @@ export async function POST(
           body.seat_selection_open;
       }
 
+      /*
+       * Deadline handling.
+       */
       if (
         body.seat_selection_deadline ===
-          "" ||
-        body.seat_selection_deadline ===
           null ||
-        typeof body.seat_selection_deadline ===
-          "undefined"
+        body.seat_selection_deadline ===
+          ""
       ) {
-        /*
-         * Only clear the deadline when the caller
-         * explicitly sends null or an empty string.
-         *
-         * When no deadline field is sent, leave it alone.
-         */
-        if (
-          body.seat_selection_deadline ===
-            "" ||
-          body.seat_selection_deadline ===
-            null
-        ) {
-          update.seat_selection_deadline =
-            null;
-        }
+        update.seat_selection_deadline =
+          null;
       } else if (
         typeof body.seat_selection_deadline ===
         "string"
@@ -640,7 +796,9 @@ export async function POST(
 
         if (deadlineValue) {
           const deadlineDate =
-            new Date(deadlineValue);
+            new Date(
+              deadlineValue
+            );
 
           if (
             Number.isNaN(
@@ -670,69 +828,132 @@ export async function POST(
           {
             ok: false,
             message:
-              "No event seat selection change sent.",
+              "No seat selection change was supplied.",
           },
           400
         );
       }
 
+      /*
+       * THIS IS THE ACTUAL DATABASE WRITE.
+       */
       const {
-        data: updatedEvent,
         error: updateError,
       } = await supabase
         .from("events")
         .update(update)
         .eq(
           "id",
-          permanentEventId
-        )
-        .select(
-          "id, name, year, event_date, seat_selection_open, seat_selection_deadline, allow_member_seat_changes"
-        )
-        .single();
+          event.id
+        );
 
-      if (
-        updateError ||
-        !updatedEvent
-      ) {
+      if (updateError) {
         return jsonResponse(
           {
             ok: false,
             message:
-              updateError?.message ??
-              "Unable to update event seat selection.",
+              updateError.message ??
+              "Unable to save seat selection settings.",
           },
           409
         );
       }
 
+      /*
+       * READ THE EVENT AGAIN AFTER THE UPDATE.
+       *
+       * This is deliberate. We do not simply trust
+       * the value sent by the browser.
+       */
+      const {
+        data: savedEvent,
+        error: verifyError,
+      } = await supabase
+        .from("events")
+        .select(
+          "id, name, year, event_date, seat_selection_open, seat_selection_deadline, allow_member_seat_changes"
+        )
+        .eq(
+          "id",
+          event.id
+        )
+        .maybeSingle();
+
+      if (
+        verifyError ||
+        !savedEvent
+      ) {
+        return jsonResponse(
+          {
+            ok: false,
+            message:
+              verifyError?.message ??
+              "The seat selection setting was not found after saving.",
+          },
+          500
+        );
+      }
+
+      /*
+       * Return the ACTUAL DATABASE VALUE.
+       */
       return jsonResponse({
         ok: true,
+        event: {
+          id:
+            savedEvent.id,
+          name:
+            savedEvent.name,
+          year:
+            savedEvent.year,
+          event_date:
+            savedEvent.event_date,
+          seat_selection_open:
+            Boolean(
+              savedEvent.seat_selection_open
+            ),
+          seat_selection_deadline:
+            savedEvent.seat_selection_deadline ??
+            null,
+          allow_member_seat_changes:
+            Boolean(
+              savedEvent.allow_member_seat_changes
+            ),
+        },
         message:
-          updatedEvent.seat_selection_open
+          savedEvent.seat_selection_open
             ? "Seat selection is now open."
             : "Seat selection is now closed.",
-        event: updatedEvent,
       });
     }
 
     /*
+     * ==================================================
      * MANUAL ADMIN ASSIGNMENT
+     * ==================================================
      */
-    if (action === "assign") {
-      const guestId = String(
-        body.guest_id ?? ""
-      ).trim();
+    if (
+      action === "assign"
+    ) {
+      const guestId =
+        String(
+          body.guest_id ?? ""
+        ).trim();
 
-      const seatId = String(
-        body.seat_id ?? ""
-      ).trim();
+      const seatId =
+        String(
+          body.seat_id ?? ""
+        ).trim();
 
-      const paymentId = String(
-        body.payment_id ?? ""
-      ).trim();
+      const paymentId =
+        String(
+          body.payment_id ?? ""
+        ).trim();
 
-      if (!guestId || !seatId) {
+      if (
+        !guestId ||
+        !seatId
+      ) {
         return jsonResponse(
           {
             ok: false,
@@ -749,8 +970,14 @@ export async function POST(
       } = await supabase
         .from("bus_seats")
         .select("*")
-        .eq("id", seatId)
-        .eq("bus_id", bus.id)
+        .eq(
+          "id",
+          seatId
+        )
+        .eq(
+          "bus_id",
+          bus.id
+        )
         .maybeSingle();
 
       if (
@@ -767,7 +994,9 @@ export async function POST(
         );
       }
 
-      if (seat.is_disabled) {
+      if (
+        seat.is_disabled
+      ) {
         return jsonResponse(
           {
             ok: false,
@@ -784,7 +1013,10 @@ export async function POST(
       } = await supabase
         .from("guests")
         .select("*")
-        .eq("id", guestId)
+        .eq(
+          "id",
+          guestId
+        )
         .maybeSingle();
 
       if (
@@ -802,10 +1034,9 @@ export async function POST(
       }
 
       if (
-        permanentEventId &&
         guest.event_id &&
         guest.event_id !==
-          permanentEventId
+          event.id
       ) {
         return jsonResponse(
           {
@@ -817,10 +1048,6 @@ export async function POST(
         );
       }
 
-      /*
-       * Load this guest's valid payments
-       * for the same event.
-       */
       let paymentQuery =
         supabase
           .from("payments")
@@ -830,25 +1057,25 @@ export async function POST(
             guest.id
           )
           .eq(
+            "event_id",
+            event.id
+          )
+          .eq(
             "is_voided",
             false
           )
-          .order("paid_at", {
-            ascending: false,
-          });
-
-      if (permanentEventId) {
-        paymentQuery =
-          paymentQuery.eq(
-            "event_id",
-            permanentEventId
+          .order(
+            "paid_at",
+            {
+              ascending: false,
+            }
           );
-      }
 
       const {
         data: paymentRowsData,
         error: paymentRowsError,
-      } = await paymentQuery;
+      } =
+        await paymentQuery;
 
       if (paymentRowsError) {
         return jsonResponse(
@@ -877,7 +1104,8 @@ export async function POST(
           ) =>
             sum +
             Number(
-              row?.amount ?? 0
+              row?.amount ??
+                0
             ),
           0
         );
@@ -891,7 +1119,8 @@ export async function POST(
             ok: false,
             message:
               "Guest is not eligible. At least ₦5,000 total valid payment is required.",
-            needsPayment: true,
+            needsPayment:
+              true,
             totalPaid,
           },
           403
@@ -907,7 +1136,9 @@ export async function POST(
         paymentRows[0] ??
         null;
 
-      if (!selectedPayment) {
+      if (
+        !selectedPayment
+      ) {
         return jsonResponse(
           {
             ok: false,
@@ -918,32 +1149,31 @@ export async function POST(
         );
       }
 
-      /*
-       * A member can have only one currently
-       * occupied seat on the permanent Big Costa bus.
-       */
       const {
         data: existingGuestSeat,
         error:
           existingGuestSeatError,
-      } = await supabase
-        .from("seat_assignments")
-        .select(
-          "*, bus_seats:seat_id(seat_number)"
-        )
-        .eq(
-          "guest_id",
-          guest.id
-        )
-        .eq(
-          "bus_id",
-          bus.id
-        )
-        .eq(
-          "status",
-          "occupied"
-        )
-        .maybeSingle();
+      } =
+        await supabase
+          .from(
+            "seat_assignments"
+          )
+          .select(
+            "*, bus_seats:seat_id(seat_number)"
+          )
+          .eq(
+            "guest_id",
+            guest.id
+          )
+          .eq(
+            "bus_id",
+            bus.id
+          )
+          .eq(
+            "status",
+            "occupied"
+          )
+          .maybeSingle();
 
       if (
         existingGuestSeatError
@@ -959,7 +1189,9 @@ export async function POST(
         );
       }
 
-      if (existingGuestSeat) {
+      if (
+        existingGuestSeat
+      ) {
         const guestSeatNumber =
           existingGuestSeat
             .bus_seats
@@ -977,34 +1209,35 @@ export async function POST(
         );
       }
 
-      /*
-       * Make sure another member has not already
-       * taken this permanent seat.
-       */
       const {
         data: seatTaken,
         error:
           seatTakenError,
-      } = await supabase
-        .from("seat_assignments")
-        .select(
-          "*, guests:guest_id(full_name)"
-        )
-        .eq(
-          "bus_id",
-          bus.id
-        )
-        .eq(
-          "seat_id",
-          seat.id
-        )
-        .eq(
-          "status",
-          "occupied"
-        )
-        .maybeSingle();
+      } =
+        await supabase
+          .from(
+            "seat_assignments"
+          )
+          .select(
+            "*, guests:guest_id(full_name)"
+          )
+          .eq(
+            "bus_id",
+            bus.id
+          )
+          .eq(
+            "seat_id",
+            seat.id
+          )
+          .eq(
+            "status",
+            "occupied"
+          )
+          .maybeSingle();
 
-      if (seatTakenError) {
+      if (
+        seatTakenError
+      ) {
         return jsonResponse(
           {
             ok: false,
@@ -1021,7 +1254,8 @@ export async function POST(
           {
             ok: false,
             message: `Seat ${seat.seat_number} is no longer available.`,
-            seatTaken: true,
+            seatTaken:
+              true,
           },
           409
         );
@@ -1030,34 +1264,41 @@ export async function POST(
       const now =
         new Date().toISOString();
 
-      const assignmentPayload = {
-        event_id:
-          permanentEventId ??
-          selectedPayment.event_id ??
-          guest.event_id ??
-          null,
-        bus_id: bus.id,
-        seat_id: seat.id,
-        guest_id: guest.id,
-        payment_id:
-          selectedPayment.id,
-        status: "occupied",
-        assigned_by:
-          profile.id,
-        assigned_at: now,
-        updated_at: now,
-      };
+      const assignmentPayload =
+        {
+          event_id:
+            event.id,
+          bus_id:
+            bus.id,
+          seat_id:
+            seat.id,
+          guest_id:
+            guest.id,
+          payment_id:
+            selectedPayment.id,
+          status:
+            "occupied",
+          assigned_by:
+            profile.id,
+          assigned_at:
+            now,
+          updated_at:
+            now,
+        };
 
       const {
         data: inserted,
         error: insertError,
-      } = await supabase
-        .from("seat_assignments")
-        .insert(
-          assignmentPayload
-        )
-        .select("*")
-        .single();
+      } =
+        await supabase
+          .from(
+            "seat_assignments"
+          )
+          .insert(
+            assignmentPayload
+          )
+          .select("*")
+          .single();
 
       if (
         insertError ||
@@ -1077,17 +1318,23 @@ export async function POST(
       return jsonResponse({
         ok: true,
         message: `Seat ${seat.seat_number} assigned.`,
-        assignment: inserted,
+        assignment:
+          inserted,
       });
     }
 
     /*
+     * ==================================================
      * RELEASE ONE SEAT
+     * ==================================================
      */
-    if (action === "release") {
-      const seatId = String(
-        body.seat_id ?? ""
-      ).trim();
+    if (
+      action === "release"
+    ) {
+      const seatId =
+        String(
+          body.seat_id ?? ""
+        ).trim();
 
       if (!seatId) {
         return jsonResponse(
@@ -1106,8 +1353,14 @@ export async function POST(
       } = await supabase
         .from("bus_seats")
         .select("*")
-        .eq("id", seatId)
-        .eq("bus_id", bus.id)
+        .eq(
+          "id",
+          seatId
+        )
+        .eq(
+          "bus_id",
+          bus.id
+        )
         .maybeSingle();
 
       if (
@@ -1124,38 +1377,38 @@ export async function POST(
         );
       }
 
-      /*
-       * Release the currently occupied assignment
-       * for this permanent Big Costa seat.
-       *
-       * Do NOT require event_id from the browser.
-       */
       const {
         data: assignment,
         error:
           assignmentLookupError,
-      } = await supabase
-        .from("seat_assignments")
-        .select(
-          "*, guests:guest_id(full_name), bus_seats:seat_id(seat_number)"
-        )
-        .eq(
-          "bus_id",
-          bus.id
-        )
-        .eq(
-          "seat_id",
-          seatId
-        )
-        .eq(
-          "status",
-          "occupied"
-        )
-        .order("updated_at", {
-          ascending: false,
-        })
-        .limit(1)
-        .maybeSingle();
+      } =
+        await supabase
+          .from(
+            "seat_assignments"
+          )
+          .select(
+            "*, guests:guest_id(full_name), bus_seats:seat_id(seat_number)"
+          )
+          .eq(
+            "bus_id",
+            bus.id
+          )
+          .eq(
+            "seat_id",
+            seatId
+          )
+          .eq(
+            "status",
+            "occupied"
+          )
+          .order(
+            "updated_at",
+            {
+              ascending: false,
+            }
+          )
+          .limit(1)
+          .maybeSingle();
 
       if (
         assignmentLookupError
@@ -1184,21 +1437,25 @@ export async function POST(
 
       const {
         error: releaseError,
-      } = await supabase
-        .from("seat_assignments")
-        .update({
-          status: "released",
-          updated_at:
-            new Date().toISOString(),
-        })
-        .eq(
-          "id",
-          assignment.id
-        )
-        .eq(
-          "bus_id",
-          bus.id
-        );
+      } =
+        await supabase
+          .from(
+            "seat_assignments"
+          )
+          .update({
+            status:
+              "released",
+            updated_at:
+              new Date().toISOString(),
+          })
+          .eq(
+            "id",
+            assignment.id
+          )
+          .eq(
+            "bus_id",
+            bus.id
+          );
 
       if (releaseError) {
         return jsonResponse(
@@ -1215,21 +1472,18 @@ export async function POST(
       return jsonResponse({
         ok: true,
         message: `Seat ${
-          assignment.bus_seats
+          assignment
+            .bus_seats
             ?.seat_number ??
           seat.seat_number
         } released.`,
-        assignment,
       });
     }
 
     /*
-     * RESET ALL PERMANENT BIG COSTA ASSIGNMENTS
-     *
-     * This releases every currently occupied assignment
-     * on the permanent Big Costa bus.
-     *
-     * Guests and payments are untouched.
+     * ==================================================
+     * RESET ALL SEATS
+     * ==================================================
      */
     if (
       action ===
@@ -1239,17 +1493,20 @@ export async function POST(
         data: occupiedAssignments,
         error:
           occupiedLookupError,
-      } = await supabase
-        .from("seat_assignments")
-        .select("id")
-        .eq(
-          "bus_id",
-          bus.id
-        )
-        .eq(
-          "status",
-          "occupied"
-        );
+      } =
+        await supabase
+          .from(
+            "seat_assignments"
+          )
+          .select("id")
+          .eq(
+            "bus_id",
+            bus.id
+          )
+          .eq(
+            "status",
+            "occupied"
+          );
 
       if (
         occupiedLookupError
@@ -1272,24 +1529,31 @@ export async function POST(
           ? occupiedAssignments.length
           : 0;
 
-      if (releasedCount > 0) {
+      if (
+        releasedCount >
+        0
+      ) {
         const {
           error: resetError,
-        } = await supabase
-          .from("seat_assignments")
-          .update({
-            status: "released",
-            updated_at:
-              new Date().toISOString(),
-          })
-          .eq(
-            "bus_id",
-            bus.id
-          )
-          .eq(
-            "status",
-            "occupied"
-          );
+        } =
+          await supabase
+            .from(
+              "seat_assignments"
+            )
+            .update({
+              status:
+                "released",
+              updated_at:
+                new Date().toISOString(),
+            })
+            .eq(
+              "bus_id",
+              bus.id
+            )
+            .eq(
+              "status",
+              "occupied"
+            );
 
         if (resetError) {
           return jsonResponse(
