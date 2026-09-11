@@ -299,6 +299,16 @@ export async function POST(
       );
     }
 
+    if (bus.event_id !== event.id) {
+      return jsonResponse(
+        {
+          ok: false,
+          message: "This payment is not linked to the event that controls the permanent Big Costa seat map.",
+        },
+        409
+      );
+    }
+
     /*
      * Find the guest's currently occupied seat
      * on the permanent Big Costa bus.
@@ -322,6 +332,10 @@ export async function POST(
       .eq(
         "bus_id",
         bus.id
+      )
+      .eq(
+        "event_id",
+        event.id
       )
       .eq(
         "status",

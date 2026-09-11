@@ -1,7 +1,14 @@
-import SeatsClient from "@/components/SeatsClient";
+import SeatsClient from "./seats-client";
 
 export const dynamic = "force-dynamic";
 
 export default function SeatsPage() {
-  return <SeatsClient />;
+  return (
+    <SeatsClient
+      event={null}
+      admin=""
+      isOwner={false}
+      permissions={[]}
+    />
+  );
 }

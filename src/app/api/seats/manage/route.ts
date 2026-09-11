@@ -838,6 +838,7 @@ export async function POST(
        * THIS IS THE ACTUAL DATABASE WRITE.
        */
       const {
+        data: updatedEvents,
         error: updateError,
       } = await supabase
         .from("events")
@@ -845,9 +846,14 @@ export async function POST(
         .eq(
           "id",
           event.id
-        );
+        )
+        .select("id");
 
-      if (updateError) {
+      if (
+        updateError ||
+        !updatedEvents ||
+        updatedEvents.length !== 1
+      ) {
         return jsonResponse(
           {
             ok: false,
@@ -1168,6 +1174,10 @@ export async function POST(
           .eq(
             "bus_id",
             bus.id
+          )
+          .eq(
+            "event_id",
+            event.id
           )
           .eq(
             "status",
@@ -1534,6 +1544,7 @@ export async function POST(
         0
       ) {
         const {
+          data: releasedAssignments,
           error: resetError,
         } =
           await supabase
@@ -1551,11 +1562,20 @@ export async function POST(
               bus.id
             )
             .eq(
+              "event_id",
+              event.id
+            )
+            .eq(
               "status",
               "occupied"
-            );
+            )
+            .select("id");
 
-        if (resetError) {
+        if (
+          resetError ||
+          !releasedAssignments ||
+          releasedAssignments.length !== releasedCount
+        ) {
           return jsonResponse(
             {
               ok: false,

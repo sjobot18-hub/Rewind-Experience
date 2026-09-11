@@ -14,6 +14,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, message: "Big Costa bus not configured for the permanent seat map." }, { status: 404 });
     }
 
+    if (!bus.event_id) {
+      return NextResponse.json({ ok: false, message: "The permanent Big Costa bus is not linked to an event." }, { status: 404 });
+    }
+
     const { data: seats, error: seatError } = await supabase
       .from("bus_seats")
       .select("*")
@@ -25,11 +29,16 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, message: "Unable to load bus seats." }, { status: 500 });
     }
 
-    const { data: assignments } = await supabase
+    const { data: assignments, error: assignmentError } = await supabase
       .from("seat_assignments")
       .select("*, guests:guest_id(full_name)")
       .eq("bus_id", bus.id)
+      .eq("event_id", bus.event_id)
       .neq("status", "released");
+
+    if (assignmentError) {
+      return NextResponse.json({ ok: false, message: "Unable to load seat assignments." }, { status: 500 });
+    }
 
     const assignmentBySeat = new Map<string, any>();
     for (const row of assignments ?? []) {
@@ -81,7 +90,10 @@ export async function GET(request: Request) {
       };
     });
 
-    return NextResponse.json({ ok: true, event: null, bus, seats: output, event_id: bus.event_id ?? null, bus_id: bus.id });
+    return NextResponse.json(
+      { ok: true, event: null, bus, seats: output, event_id: bus.event_id, bus_id: bus.id },
+      { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate", Pragma: "no-cache", Expires: "0" } }
+    );
   } catch (error: any) {
     return NextResponse.json({ ok: false, message: error.message ?? "Seat map failed." }, { status: 500 });
   }
