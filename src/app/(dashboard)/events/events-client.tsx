@@ -41,7 +41,19 @@ export default function EventsClient({ events, isOwner }: { events: EventRecord[
   }
 
   async function handleSwitch(eventId: string) {
-    await supabase.rpc("switch_active_event", { p_event_id: eventId });
+    const response = await fetch("/api/events/switch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event_id: eventId }),
+    });
+
+    const json = await response.json();
+
+    if (!response.ok || !json.ok) {
+      alert(json.message ?? "Failed to switch event.");
+      return;
+    }
+
     router.refresh();
   }
 
