@@ -149,7 +149,7 @@ export async function GET(
         supabase
       );
 
-    if (error || !bus) {
+    if (error || !bus || !event) {
       return jsonResponse(
         {
           ok: false,
@@ -738,7 +738,7 @@ export async function POST(
         supabase
       );
 
-    if (error || !bus) {
+    if (error || !bus || !event) {
       return jsonResponse(
         {
           ok: false,
