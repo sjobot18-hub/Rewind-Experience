@@ -1,11 +1,12 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { getCurrentAdmin, can } from "@/lib/currentAdmin";
 import { getPermanentBigCostaBus } from "@/lib/seats";
 
 export async function POST(request: Request) {
   try {
-    const { profile, permissions, isOwner } = await getCurrentAdmin();
+    const { permissions, isOwner } = await getCurrentAdmin();
 
     if (!isOwner && !can(permissions as any, isOwner, "manage_event_settings")) {
       return NextResponse.json({ ok: false, message: "Forbidden." }, { status: 403 });
@@ -18,9 +19,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, message: "Event ID is required." }, { status: 400 });
     }
 
-    const supabase = createAdminClient();
+    const authSupabase = createClient();
+    const adminSupabase = createAdminClient();
 
-    const { error: switchError } = await supabase.rpc("switch_active_event", {
+    const { error: switchError } = await authSupabase.rpc("switch_active_event", {
       p_event_id: eventId,
     });
 
@@ -28,10 +30,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, message: switchError.message }, { status: 409 });
     }
 
-    const bus = await getPermanentBigCostaBus(supabase);
+    const bus = await getPermanentBigCostaBus(adminSupabase);
 
     if (bus) {
-      const { error: busUpdateError } = await supabase
+      const { error: busUpdateError } = await adminSupabase
         .from("event_buses")
         .update({ event_id: eventId })
         .eq("id", bus.id);

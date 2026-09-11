@@ -6,9 +6,10 @@ import { createClient } from "@/lib/supabase/client";
 import { formatNaira, formatDate } from "@/lib/format";
 import { EventRecord } from "@/lib/types";
 
-export default function EventsClient({ events, isOwner }: { events: EventRecord[]; isOwner: boolean }) {
+export default function EventsClient({ events, isOwner, permissions }: { events: EventRecord[]; isOwner: boolean; permissions: string[] }) {
   const supabase = createClient();
   const router = useRouter();
+  const canSwitchEvents = isOwner || permissions.includes("manage_event_settings");
 
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("The Rewind Experience");
@@ -125,7 +126,7 @@ export default function EventsClient({ events, isOwner }: { events: EventRecord[
             <p className="text-xs text-slate-500 mt-2">
               Men's: {formatNaira(ev.mens_ticket_price)} · Women's: {formatNaira(ev.womens_ticket_price)}
             </p>
-            {isOwner && ev.status === "active" && (
+            {canSwitchEvents && ev.status === "active" && (
               <div className="flex gap-2 mt-3">
                 {!ev.is_currently_active && (
                   <button onClick={() => handleSwitch(ev.id)} className="btn-secondary text-xs py-2 px-3">
