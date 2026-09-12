@@ -37,6 +37,15 @@ export default function GuestsClient({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingGuest, setEditingGuest] = useState<GuestFinancials | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editGender, setEditGender] = useState<"male" | "female">("male");
+  const [editAmountPaid, setEditAmountPaid] = useState("");
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editSuccess, setEditSuccess] = useState<string | null>(null);
+
   const filtered = useMemo(() => {
     return guests.filter((g) => {
       const matchesSearch =
@@ -93,6 +102,63 @@ export default function GuestsClient({
     setGender("male");
     setShowForm(false);
     await refreshGuests();
+  }
+
+  function openEdit(guest: GuestFinancials) {
+    setEditingGuest(guest);
+    setEditName(guest.full_name);
+    setEditGender(guest.gender);
+    setEditAmountPaid(String(guest.total_paid));
+    setEditError(null);
+    setEditSuccess(null);
+    setEditOpen(true);
+  }
+
+  async function handleEditGuest(e: React.FormEvent) {
+    e.preventDefault();
+    setEditError(null);
+    setEditSuccess(null);
+
+    if (!editName.trim()) {
+      setEditError("Name cannot be empty.");
+      return;
+    }
+    if (editGender !== "male" && editGender !== "female") {
+      setEditError("Invalid gender.");
+      return;
+    }
+    const amt = parseFloat(editAmountPaid);
+    if (Number.isNaN(amt) || amt < 0) {
+      setEditError("Amount paid must be a valid non-negative number.");
+      return;
+    }
+
+    if (!editingGuest) return;
+
+    setEditSubmitting(true);
+    try {
+      const res = await fetch("/api/guests/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          guest_id: editingGuest.guest_id,
+          event_id: eventId,
+          full_name: editName.trim(),
+          gender: editGender,
+          amount_paid: amt > 0 ? amt : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setEditError(data.message ?? "Failed to update guest.");
+        return;
+      }
+      setEditSuccess("Guest information updated successfully.");
+      await refreshGuests();
+    } catch (err: any) {
+      setEditError(err?.message ?? "Failed to update guest.");
+    }
+    setEditSubmitting(false);
   }
 
   return (
@@ -156,22 +222,32 @@ export default function GuestsClient({
       {/* Mobile cards */}
       <div className="grid gap-3 md:hidden">
         {filtered.map((g) => (
-          <Link key={g.guest_id} href={`/guests/${g.guest_id}`} className="card block">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="font-semibold">{g.full_name}</p>
-                <p className="text-xs text-slate-400">{g.guest_code} · {g.phone_number}</p>
+          <div key={g.guest_id}>
+            <Link href={`/guests/${g.guest_id}`} className="card block">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="font-semibold">{g.full_name}</p>
+                  <p className="text-xs text-slate-400">{g.guest_code} · {g.phone_number}</p>
+                </div>
+                <StatusBadge status={g.status} />
               </div>
-              <StatusBadge status={g.status} />
+              <div className="flex justify-between mt-3 text-sm">
+                <span className="text-slate-500">Paid {formatNaira(g.total_paid)}</span>
+                <span className="font-medium">Balance {formatNaira(g.balance)}</span>
+              </div>
+              {g.is_overpaid && (
+                <p className="text-xs text-part mt-1">Overpaid by {formatNaira(g.overpayment_amount)}</p>
+              )}
+            </Link>
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={() => openEdit(g)}
+                className="btn-secondary text-xs py-1.5 px-3"
+              >
+                Edit
+              </button>
             </div>
-            <div className="flex justify-between mt-3 text-sm">
-              <span className="text-slate-500">Paid {formatNaira(g.total_paid)}</span>
-              <span className="font-medium">Balance {formatNaira(g.balance)}</span>
-            </div>
-            {g.is_overpaid && (
-              <p className="text-xs text-part mt-1">Overpaid by {formatNaira(g.overpayment_amount)}</p>
-            )}
-          </Link>
+          </div>
         ))}
         {filtered.length === 0 && <p className="text-slate-400 text-sm">No guests found.</p>}
       </div>
@@ -189,6 +265,7 @@ export default function GuestsClient({
               <th className="py-2 pr-4">Paid</th>
               <th className="py-2 pr-4">Balance</th>
               <th className="py-2 pr-4">Status</th>
+              <th className="py-2 pr-4"></th>
             </tr>
           </thead>
           <tbody>
@@ -204,12 +281,55 @@ export default function GuestsClient({
                 <td className="py-2 pr-4">{formatNaira(g.total_paid)}</td>
                 <td className="py-2 pr-4">{formatNaira(g.balance)}</td>
                 <td className="py-2 pr-4"><StatusBadge status={g.status} /></td>
+                <td className="py-2 pr-4">
+                  <button onClick={() => openEdit(g)} className="text-xs text-blue font-medium">Edit</button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
         {filtered.length === 0 && <p className="text-slate-400 text-sm py-4">No guests found.</p>}
       </div>
+
+      {editOpen && editingGuest && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[1px] flex items-center justify-center z-50 p-3">
+          <div className="w-full max-w-md rounded-xl bg-white shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between px-4 py-3 border-b">
+              <div>
+                <div className="font-black text-slate-800">Edit Guest</div>
+                <div className="text-xs text-slate-500">{editingGuest.guest_code} · {editingGuest.full_name}</div>
+              </div>
+              <button onClick={() => setEditOpen(false)} className="btn-secondary text-xs py-1.5 px-3">Close</button>
+            </div>
+            <form onSubmit={handleEditGuest} className="p-4 space-y-3">
+              {(editSuccess || editError) && (
+                <div className={editSuccess ? "bg-green-50 text-paid text-sm rounded-lg px-4 py-3" : "bg-red-50 text-unpaid text-sm rounded-lg px-4 py-3"}>
+                  {editSuccess || editError}
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Full Name</label>
+                <input className="input-field" value={editName} onChange={(e) => setEditName(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Gender</label>
+                <select className="input-field" value={editGender} onChange={(e) => setEditGender(e.target.value as "male" | "female")}>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Amount Paid (₦)</label>
+                <input type="number" min="0" step="0.01" className="input-field" value={editAmountPaid}
+                  onChange={(e) => setEditAmountPaid(e.target.value)} />
+              </div>
+              <button type="submit" disabled={editSubmitting} className="btn-primary w-full">
+                {editSubmitting ? "Saving..." : "Save Changes"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

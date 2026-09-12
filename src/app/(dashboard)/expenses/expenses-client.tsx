@@ -30,6 +30,19 @@ export default function ExpensesClient({
   const [confirm, setConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<any>(null);
+  const [editCategory, setEditCategory] = useState<string>(EXPENSE_CATEGORIES[0]);
+  const [editDescription, setEditDescription] = useState("");
+  const [editVendor, setEditVendor] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+  const [editMethod, setEditMethod] = useState<PaymentMethod>("cash");
+  const [editDate, setEditDate] = useState(new Date().toISOString().slice(0, 10));
+  const [editNotes, setEditNotes] = useState("");
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editSuccess, setEditSuccess] = useState<string | null>(null);
+
   async function handleVoid(expenseId: string) {
     const reason = prompt("Reason for voiding this expense (required):");
     if (!reason) return;
@@ -46,6 +59,67 @@ export default function ExpensesClient({
       .order("created_at", { ascending: false });
     setExpenses(data ?? []);
     router.refresh();
+  }
+
+  function openEdit(expense: any) {
+    setEditingExpense(expense);
+    setEditCategory(expense.category);
+    setEditDescription(expense.description);
+    setEditVendor(expense.vendor ?? "");
+    setEditAmount(String(expense.amount));
+    setEditMethod(expense.payment_method);
+    setEditDate(expense.spent_at);
+    setEditNotes(expense.notes ?? "");
+    setEditError(null);
+    setEditSuccess(null);
+    setEditOpen(true);
+  }
+
+  async function handleEditExpense(e: React.FormEvent) {
+    e.preventDefault();
+    setEditError(null);
+    setEditSuccess(null);
+
+    if (!editDescription.trim()) {
+      setEditError("Description is required.");
+      return;
+    }
+    const amt = parseFloat(editAmount);
+    if (Number.isNaN(amt) || amt <= 0) {
+      setEditError("Enter a valid amount.");
+      return;
+    }
+
+    if (!editingExpense) return;
+
+    setEditSubmitting(true);
+    try {
+      const res = await fetch("/api/expenses/edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expense_id: editingExpense.id,
+          event_id: eventId,
+          category: editCategory,
+          description: editDescription.trim(),
+          vendor: editVendor.trim() || null,
+          amount: amt,
+          payment_method: editMethod,
+          spent_at: editDate,
+          notes: editNotes || null,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setEditError(data.message ?? "Failed to update expense.");
+        return;
+      }
+      setEditSuccess("Expense updated successfully.");
+      await refresh();
+    } catch (err: any) {
+      setEditError(err?.message ?? "Failed to update expense.");
+    }
+    setEditSubmitting(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -152,6 +226,11 @@ export default function ExpensesClient({
             {!e.is_voided && (
               <button onClick={() => handleVoid(e.id)} className="text-xs text-unpaid font-medium mt-2">Void Expense</button>
             )}
+            <div className="flex gap-2 mt-2">
+              {!e.is_voided && (
+                <button onClick={() => openEdit(e)} className="btn-secondary text-xs py-1.5 px-3">Edit</button>
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -180,12 +259,72 @@ export default function ExpensesClient({
                 <td className="py-2 pr-4">{formatNaira(e.balance_after)}</td>
                 <td className="py-2 pr-4">
                   {!e.is_voided && <button onClick={() => handleVoid(e.id)} className="text-xs text-unpaid font-medium">Void</button>}
+                  {!e.is_voided && <button onClick={() => openEdit(e)} className="text-xs text-blue font-medium ml-2">Edit</button>}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {editOpen && editingExpense && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[1px] flex items-center justify-center z-50 p-3">
+          <div className="w-full max-w-md rounded-xl bg-white shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between px-4 py-3 border-b">
+              <div>
+                <div className="font-black text-slate-800">Edit Expense</div>
+                <div className="text-xs text-slate-500">{editingExpense.expense_code}</div>
+              </div>
+              <button onClick={() => setEditOpen(false)} className="btn-secondary text-xs py-1.5 px-3">Close</button>
+            </div>
+            <form onSubmit={handleEditExpense} className="p-4 space-y-3">
+              {(editSuccess || editError) && (
+                <div className={editSuccess ? "bg-green-50 text-paid text-sm rounded-lg px-4 py-3" : "bg-red-50 text-unpaid text-sm rounded-lg px-4 py-3"}>
+                  {editSuccess || editError}
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Category</label>
+                <select className="input-field" value={editCategory} onChange={(e) => setEditCategory(e.target.value)}>
+                  {EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Description</label>
+                <input className="input-field" value={editDescription} onChange={(e) => setEditDescription(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Vendor (optional)</label>
+                <input className="input-field" value={editVendor} onChange={(e) => setEditVendor(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Amount</label>
+                <input type="number" min="1" step="0.01" className="input-field" value={editAmount}
+                  onChange={(e) => setEditAmount(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Payment Method</label>
+                <select className="input-field" value={editMethod} onChange={(e) => setEditMethod(e.target.value as PaymentMethod)}>
+                  <option value="cash">Cash</option>
+                  <option value="transfer">Transfer</option>
+                  <option value="pos">POS</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Date</label>
+                <input type="date" className="input-field" value={editDate} onChange={(e) => setEditDate(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Notes (optional)</label>
+                <input className="input-field" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} />
+              </div>
+              <button type="submit" disabled={editSubmitting} className="btn-primary w-full">
+                {editSubmitting ? "Saving..." : "Save Changes"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
