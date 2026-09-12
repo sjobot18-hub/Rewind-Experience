@@ -47,14 +47,14 @@ export async function POST(request: Request) {
 
     const { data: payments } = await supabase
       .from("payments")
-      .select("id, is_voided")
+      .select("*")
       .eq("guest_id", guestId)
       .eq("event_id", eventId);
 
     const activePayments = (payments ?? []).filter((p) => !p.is_voided);
     if (activePayments.length > 0) {
       return jsonResponse(
-        { ok: false, message: "This guest cannot be deleted because payment records exist for this guest. Void the related payment records first." },
+        { ok: false, message: "This guest cannot be deleted because payment records exist for this guest. Void or otherwise resolve the payment records first." },
         400
       );
     }
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const hasVoidedPayments = (payments ?? []).length > 0;
+    const voidedPayments = (payments ?? []).filter((p) => p.is_voided);
 
     const previousGuestData = {
       id: guest.id,
@@ -88,41 +88,46 @@ export async function POST(request: Request) {
       registered_by: guest.registered_by,
     };
 
-    if (hasVoidedPayments) {
-      const voidedPaymentIds = (payments ?? []).filter((p) => p.is_voided).map((p) => p.id);
+    if (voidedPayments.length > 0) {
+      const deletedVoidedPayments = [];
 
-      for (const paymentId of voidedPaymentIds) {
-        const { error: detachError } = await supabase
+      for (const payment of voidedPayments) {
+        deletedVoidedPayments.push(payment);
+
+        const { error: deleteError } = await supabase
           .from("payments")
-          .update({ guest_id: null })
-          .eq("id", paymentId)
+          .delete()
+          .eq("id", payment.id)
           .eq("event_id", eventId);
 
-        if (detachError) {
-          return jsonResponse({ ok: false, message: detachError.message }, 500);
+        if (deleteError) {
+          return jsonResponse({ ok: false, message: deleteError.message }, 500);
         }
-
-        await supabase.from("audit_logs").insert({
-          event_id: eventId,
-          actor_id: user?.id ?? "",
-          actor_email: profile?.email ?? "",
-          action: "voided_payment_detached",
-          record_type: "payment",
-          record_id: paymentId,
-          previous_value: { guest_id: guestId },
-          new_value: { guest_id: null },
-        });
       }
 
-      const { error: deleteError } = await supabase
+      const { error: guestDeleteError } = await supabase
         .from("guests")
         .delete()
         .eq("id", guestId)
         .eq("event_id", eventId);
 
-      if (deleteError) {
-        return jsonResponse({ ok: false, message: deleteError.message }, 500);
+      if (guestDeleteError) {
+        return jsonResponse({ ok: false, message: guestDeleteError.message }, 500);
       }
+
+      await supabase.from("audit_logs").insert({
+        event_id: eventId,
+        actor_id: user?.id ?? "",
+        actor_email: profile?.email ?? "",
+        action: "guest_deleted",
+        record_type: "guest",
+        record_id: guestId,
+        previous_value: {
+          ...previousGuestData,
+          deleted_voided_payments: deletedVoidedPayments,
+        },
+        new_value: null,
+      });
     } else {
       const { error: deleteError } = await supabase
         .from("guests")
@@ -133,18 +138,18 @@ export async function POST(request: Request) {
       if (deleteError) {
         return jsonResponse({ ok: false, message: deleteError.message }, 500);
       }
-    }
 
-    await supabase.from("audit_logs").insert({
-      event_id: eventId,
-      actor_id: user?.id ?? "",
-      actor_email: profile?.email ?? "",
-      action: "guest_deleted",
-      record_type: "guest",
-      record_id: guestId,
-      previous_value: previousGuestData,
-      new_value: null,
-    });
+      await supabase.from("audit_logs").insert({
+        event_id: eventId,
+        actor_id: user?.id ?? "",
+        actor_email: profile?.email ?? "",
+        action: "guest_deleted",
+        record_type: "guest",
+        record_id: guestId,
+        previous_value: previousGuestData,
+        new_value: null,
+      });
+    }
 
     return jsonResponse({
       ok: true,
