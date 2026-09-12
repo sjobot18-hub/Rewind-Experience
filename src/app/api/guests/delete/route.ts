@@ -47,14 +47,13 @@ export async function POST(request: Request) {
 
     const { data: payments } = await supabase
       .from("payments")
-      .select("id, amount, is_voided")
+      .select("id")
       .eq("guest_id", guestId)
       .eq("event_id", eventId);
 
-    const activePayments = (payments ?? []).filter((p) => !p.is_voided);
-    if (activePayments.length > 0) {
+    if ((payments ?? []).length > 0) {
       return jsonResponse(
-        { ok: false, message: "This guest cannot be deleted because payment records exist for this guest. Remove or void the related financial records first." },
+        { ok: false, message: "This guest cannot be deleted because payment records exist for this guest. Void or otherwise resolve the payment records first." },
         400
       );
     }
