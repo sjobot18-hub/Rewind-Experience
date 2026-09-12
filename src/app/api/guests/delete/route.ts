@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     const activePayments = (payments ?? []).filter((p) => !p.is_voided);
     if (activePayments.length > 0) {
       return jsonResponse(
-        { ok: false, message: "This guest cannot be deleted because active payment records exist for this guest. Void the related payment records first." },
+        { ok: false, message: "This guest cannot be deleted because payment records exist for this guest. Void the related payment records first." },
         400
       );
     }
@@ -73,18 +73,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const hasAnyPayments = (payments ?? []).length > 0;
-
-    if (guest.deleted_at) {
-      return jsonResponse({ ok: false, message: "This guest has already been deleted." }, 400);
-    }
-
-    const { data: auditLogs } = await supabase
-      .from("audit_logs")
-      .select("id")
-      .eq("record_type", "guest")
-      .eq("record_id", guestId)
-      .limit(1);
+    const hasVoidedPayments = (payments ?? []).length > 0;
 
     const previousGuestData = {
       id: guest.id,
@@ -99,26 +88,51 @@ export async function POST(request: Request) {
       registered_by: guest.registered_by,
     };
 
-    let deleteError: any = null;
+    if (hasVoidedPayments) {
+      const voidedPaymentIds = (payments ?? []).filter((p) => p.is_voided).map((p) => p.id);
 
-    if (hasAnyPayments) {
-      const { error: softDeleteError } = await supabase
-        .from("guests")
-        .update({ deleted_at: new Date().toISOString() })
-        .eq("id", guestId)
-        .eq("event_id", eventId);
-      deleteError = softDeleteError;
-    } else {
-      const { error: hardDeleteError } = await supabase
+      for (const paymentId of voidedPaymentIds) {
+        const { error: detachError } = await supabase
+          .from("payments")
+          .update({ guest_id: null })
+          .eq("id", paymentId)
+          .eq("event_id", eventId);
+
+        if (detachError) {
+          return jsonResponse({ ok: false, message: detachError.message }, 500);
+        }
+
+        await supabase.from("audit_logs").insert({
+          event_id: eventId,
+          actor_id: user?.id ?? "",
+          actor_email: profile?.email ?? "",
+          action: "voided_payment_detached",
+          record_type: "payment",
+          record_id: paymentId,
+          previous_value: { guest_id: guestId },
+          new_value: { guest_id: null },
+        });
+      }
+
+      const { error: deleteError } = await supabase
         .from("guests")
         .delete()
         .eq("id", guestId)
         .eq("event_id", eventId);
-      deleteError = hardDeleteError;
-    }
 
-    if (deleteError) {
-      return jsonResponse({ ok: false, message: deleteError.message }, 500);
+      if (deleteError) {
+        return jsonResponse({ ok: false, message: deleteError.message }, 500);
+      }
+    } else {
+      const { error: deleteError } = await supabase
+        .from("guests")
+        .delete()
+        .eq("id", guestId)
+        .eq("event_id", eventId);
+
+      if (deleteError) {
+        return jsonResponse({ ok: false, message: deleteError.message }, 500);
+      }
     }
 
     await supabase.from("audit_logs").insert({
