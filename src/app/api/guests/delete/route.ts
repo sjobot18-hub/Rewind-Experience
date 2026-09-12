@@ -47,13 +47,14 @@ export async function POST(request: Request) {
 
     const { data: payments } = await supabase
       .from("payments")
-      .select("id")
+      .select("id, is_voided")
       .eq("guest_id", guestId)
       .eq("event_id", eventId);
 
-    if ((payments ?? []).length > 0) {
+    const activePayments = (payments ?? []).filter((p) => !p.is_voided);
+    if (activePayments.length > 0) {
       return jsonResponse(
-        { ok: false, message: "This guest cannot be deleted because payment records exist for this guest. Void or otherwise resolve the payment records first." },
+        { ok: false, message: "This guest cannot be deleted because active payment records exist for this guest. Void the related payment records first." },
         400
       );
     }
@@ -70,6 +71,12 @@ export async function POST(request: Request) {
         { ok: false, message: "This guest cannot be deleted because they currently have a seat assignment. Release the seat first." },
         400
       );
+    }
+
+    const hasAnyPayments = (payments ?? []).length > 0;
+
+    if (guest.deleted_at) {
+      return jsonResponse({ ok: false, message: "This guest has already been deleted." }, 400);
     }
 
     const { data: auditLogs } = await supabase
@@ -92,11 +99,23 @@ export async function POST(request: Request) {
       registered_by: guest.registered_by,
     };
 
-    const { error: deleteError } = await supabase
-      .from("guests")
-      .delete()
-      .eq("id", guestId)
-      .eq("event_id", eventId);
+    let deleteError: any = null;
+
+    if (hasAnyPayments) {
+      const { error: softDeleteError } = await supabase
+        .from("guests")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", guestId)
+        .eq("event_id", eventId);
+      deleteError = softDeleteError;
+    } else {
+      const { error: hardDeleteError } = await supabase
+        .from("guests")
+        .delete()
+        .eq("id", guestId)
+        .eq("event_id", eventId);
+      deleteError = hardDeleteError;
+    }
 
     if (deleteError) {
       return jsonResponse({ ok: false, message: deleteError.message }, 500);
