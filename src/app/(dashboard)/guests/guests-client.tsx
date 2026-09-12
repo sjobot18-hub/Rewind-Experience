@@ -46,6 +46,11 @@ export default function GuestsClient({
   const [editError, setEditError] = useState<string | null>(null);
   const [editSuccess, setEditSuccess] = useState<string | null>(null);
 
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletingGuest, setDeletingGuest] = useState<GuestFinancials | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const filtered = useMemo(() => {
     return guests.filter((g) => {
       const matchesSearch =
@@ -161,6 +166,39 @@ export default function GuestsClient({
     setEditSubmitting(false);
   }
 
+  function openDelete(guest: GuestFinancials) {
+    setDeletingGuest(guest);
+    setDeleteError(null);
+    setDeleteOpen(true);
+  }
+
+  async function handleDeleteGuest() {
+    setDeleteError(null);
+    if (!deletingGuest) return;
+
+    setDeleteSubmitting(true);
+    try {
+      const res = await fetch("/api/guests/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          guest_id: deletingGuest.guest_id,
+          event_id: eventId,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setDeleteError(data.message ?? "Failed to delete guest.");
+        return;
+      }
+      setDeleteOpen(false);
+      await refreshGuests();
+    } catch (err: any) {
+      setDeleteError(err?.message ?? "Failed to delete guest.");
+    }
+    setDeleteSubmitting(false);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -246,6 +284,12 @@ export default function GuestsClient({
               >
                 Edit
               </button>
+              <button
+                onClick={() => openDelete(g)}
+                className="btn-destructive text-xs py-1.5 px-3"
+              >
+                Delete
+              </button>
             </div>
           </div>
         ))}
@@ -283,6 +327,7 @@ export default function GuestsClient({
                 <td className="py-2 pr-4"><StatusBadge status={g.status} /></td>
                 <td className="py-2 pr-4">
                   <button onClick={() => openEdit(g)} className="text-xs text-blue font-medium">Edit</button>
+                  <button onClick={() => openDelete(g)} className="text-xs text-unpaid font-medium ml-2">Delete</button>
                 </td>
               </tr>
             ))}
@@ -327,6 +372,35 @@ export default function GuestsClient({
                 {editSubmitting ? "Saving..." : "Save Changes"}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {deleteOpen && deletingGuest && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[1px] flex items-center justify-center z-50 p-3">
+          <div className="w-full max-w-md rounded-xl bg-white shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between px-4 py-3 border-b">
+              <div>
+                <div className="font-black text-slate-800">Delete Guest</div>
+                <div className="text-xs text-slate-500">{deletingGuest.guest_code}</div>
+              </div>
+              <button onClick={() => setDeleteOpen(false)} className="btn-secondary text-xs py-1.5 px-3">Close</button>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-slate-700">Delete this guest?</p>
+              <p className="font-semibold text-slate-900">{deletingGuest.full_name}</p>
+              {deleteError && (
+                <div className="bg-red-50 text-unpaid text-sm rounded-lg px-4 py-3">{deleteError}</div>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setDeleteOpen(false)} disabled={deleteSubmitting} className="btn-secondary py-2 px-4">
+                  Cancel
+                </button>
+                <button onClick={handleDeleteGuest} disabled={deleteSubmitting} className="bg-unpaid text-white py-2 px-4 rounded-lg font-medium hover:bg-red-700 disabled:opacity-50">
+                  {deleteSubmitting ? "Deleting..." : "Delete Guest"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -43,6 +43,11 @@ export default function ExpensesClient({
   const [editError, setEditError] = useState<string | null>(null);
   const [editSuccess, setEditSuccess] = useState<string | null>(null);
 
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletingExpense, setDeletingExpense] = useState<any>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   async function handleVoid(expenseId: string) {
     const reason = prompt("Reason for voiding this expense (required):");
     if (!reason) return;
@@ -120,6 +125,39 @@ export default function ExpensesClient({
       setEditError(err?.message ?? "Failed to update expense.");
     }
     setEditSubmitting(false);
+  }
+
+  function openDelete(expense: any) {
+    setDeletingExpense(expense);
+    setDeleteError(null);
+    setDeleteOpen(true);
+  }
+
+  async function handleDeleteExpense() {
+    setDeleteError(null);
+    if (!deletingExpense) return;
+
+    setDeleteSubmitting(true);
+    try {
+      const res = await fetch("/api/expenses/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expense_id: deletingExpense.id,
+          event_id: eventId,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setDeleteError(data.message ?? "Failed to delete expense.");
+        return;
+      }
+      setDeleteOpen(false);
+      await refresh();
+    } catch (err: any) {
+      setDeleteError(err?.message ?? "Failed to delete expense.");
+    }
+    setDeleteSubmitting(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -230,6 +268,9 @@ export default function ExpensesClient({
               {!e.is_voided && (
                 <button onClick={() => openEdit(e)} className="btn-secondary text-xs py-1.5 px-3">Edit</button>
               )}
+              {!e.is_voided && (
+                <button onClick={() => openDelete(e)} className="btn-destructive text-xs py-1.5 px-3">Delete</button>
+              )}
             </div>
           </div>
         ))}
@@ -260,6 +301,7 @@ export default function ExpensesClient({
                 <td className="py-2 pr-4">
                   {!e.is_voided && <button onClick={() => handleVoid(e.id)} className="text-xs text-unpaid font-medium">Void</button>}
                   {!e.is_voided && <button onClick={() => openEdit(e)} className="text-xs text-blue font-medium ml-2">Edit</button>}
+                  {!e.is_voided && <button onClick={() => openDelete(e)} className="text-xs text-unpaid font-medium ml-2">Delete</button>}
                 </td>
               </tr>
             ))}
@@ -322,6 +364,48 @@ export default function ExpensesClient({
                 {editSubmitting ? "Saving..." : "Save Changes"}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {deleteOpen && deletingExpense && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[1px] flex items-center justify-center z-50 p-3">
+          <div className="w-full max-w-md rounded-xl bg-white shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between px-4 py-3 border-b">
+              <div>
+                <div className="font-black text-slate-800">Delete Expense</div>
+                <div className="text-xs text-slate-500">{deletingExpense.expense_code}</div>
+              </div>
+              <button onClick={() => setDeleteOpen(false)} className="btn-secondary text-xs py-1.5 px-3">Close</button>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-slate-700">Delete this expense?</p>
+              <div className="space-y-2 text-sm">
+                <div>
+                  <span className="font-medium text-slate-500">Description:</span>
+                  <p className="text-slate-900">{deletingExpense.description}</p>
+                </div>
+                <div>
+                  <span className="font-medium text-slate-500">Amount:</span>
+                  <p className="text-slate-900">{formatNaira(deletingExpense.amount)}</p>
+                </div>
+                <div>
+                  <span className="font-medium text-slate-500">Category:</span>
+                  <p className="text-slate-900">{deletingExpense.category}</p>
+                </div>
+              </div>
+              {deleteError && (
+                <div className="bg-red-50 text-unpaid text-sm rounded-lg px-4 py-3">{deleteError}</div>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setDeleteOpen(false)} disabled={deleteSubmitting} className="btn-secondary py-2 px-4">
+                  Cancel
+                </button>
+                <button onClick={handleDeleteExpense} disabled={deleteSubmitting} className="bg-unpaid text-white py-2 px-4 rounded-lg font-medium hover:bg-red-700 disabled:opacity-50">
+                  {deleteSubmitting ? "Deleting..." : "Delete Expense"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
