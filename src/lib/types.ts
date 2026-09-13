@@ -110,6 +110,23 @@ export interface EventDashboard {
   female_ticket_revenue: number;
 }
 
+export type GameLocation = "beach" | "apartment";
+export type GameStatus = "pending" | "completed";
+
+export interface Game {
+  id: string;
+  event_id: string;
+  name: string;
+  location: GameLocation;
+  description: string | null;
+  tiktok_url: string | null;
+  notes: string | null;
+  status: GameStatus;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export const EXPENSE_CATEGORIES = [
   "Venue", "Food", "Drinks", "Decoration", "Entertainment", "Transportation",
   "Security", "Photography", "Marketing", "Staff", "Equipment", "Other",

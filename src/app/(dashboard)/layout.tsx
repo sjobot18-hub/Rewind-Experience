@@ -14,6 +14,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     { href: "/finance", label: "Finance", show: can(permissions, isOwner, "view_finance") },
     { href: "/reports", label: "Reports", show: can(permissions, isOwner, "manage_reports") },
     { href: "/events", label: "Events", show: isOwner || can(permissions, isOwner, "create_events") },
+    { href: "/games", label: "Games", show: isOwner || can(permissions, isOwner, "manage_event_settings") },
     { href: "/seats/manage", label: "Seat Management", show: isOwner || can(permissions, isOwner, "manage_seats") || can(permissions, isOwner, "manage_event_settings") },
     { href: "/admins", label: "Administrators", show: isOwner || can(permissions, isOwner, "manage_administrators") },
     { href: "/audit-log", label: "Audit Log", show: can(permissions, isOwner, "view_audit_logs") },
