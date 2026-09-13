@@ -140,9 +140,12 @@ export default function GuestProfileClient({
     setDuplicateWarning(false);
   }
 
-  const whatsappUrl = guest.balance > 0
+  const relevantPayment = (payments ?? []).find((p) => !p.is_voided);
+  const paymentId = relevantPayment?.public_payment_id ?? relevantPayment?.payment_code ?? "";
+
+  const whatsappUrl = guest.balance > 0 && paymentId
     ? `https://wa.me/${guest.phone_number.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(
-        `Hi ${guest.full_name}, this is a reminder about your outstanding balance of ${formatNaira(guest.balance)} for ${eventName}. Kindly complete your payment at your earliest convenience. Thank you!`
+        `Hi ${guest.full_name}, this is a reminder about your outstanding balance of ${formatNaira(guest.balance)} for ${eventName}.\n\nPayment ID: ${paymentId}\n\nIf you have not selected your seat yet, you can use your Payment ID to access the public seat selection page and choose your preferred available seat:\n\nhttps://rewind-experience.vercel.app/seats\n\nIMPORTANT: Please keep your Payment ID private. Do not share it with anyone, as it is used to access your payment and seat selection information.\n\nKindly complete your payment at your earliest convenience. Thank you!`
       )}`
     : null;
 
