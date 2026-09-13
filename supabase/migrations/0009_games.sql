@@ -1,27 +1,31 @@
 -- ============================================================================
 -- THE REWIND EXPERIENCE — Games Management
 -- ============================================================================
-
-create type game_location as enum ('beach', 'apartment');
-create type game_status as enum ('pending', 'completed');
+-- Creates public.games table for organizing games by event location.
+-- Games belong to an event and support Beach/Apartment locations.
+-- RLS policies use the existing manage_event_settings permission.
+-- ============================================================================
 
 create table public.games (
   id uuid primary key default gen_random_uuid(),
   event_id uuid not null references public.events(id) on delete cascade,
   name text not null,
-  location game_location not null,
+  location text not null check (location in ('beach', 'apartment')),
   description text,
   tiktok_url text,
+  video_url text,
   notes text,
-  status game_status not null default 'pending',
+  status text not null default 'pending',
+  is_completed boolean not null default false,
   completed_at timestamptz,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  created_by uuid references public.admin_profiles(id)
 );
 
-create index on public.games (event_id);
-create index on public.games (status);
-create index on public.games (location);
+create index idx_games_event_id on public.games(event_id);
+create index idx_games_location on public.games(location);
+create index idx_games_is_completed on public.games(is_completed);
 
 alter table public.games enable row level security;
 
