@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getPermanentBigCostaBus, normalizeBusSeatType, seatDisplayNameFromAssignment } from "@/lib/seats";
+import { getPermanentBigCostaBus, getActiveEventId, getSmallCostaBus, normalizeBusSeatType, seatDisplayNameFromAssignment } from "@/lib/seats";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -8,10 +8,24 @@ export const revalidate = 0;
 export async function GET(request: Request) {
   try {
     const supabase = createAdminClient();
-    const bus = await getPermanentBigCostaBus(supabase);
+
+    const url = new URL(request.url);
+    const busName = url.searchParams.get("bus") ?? "Big Costa";
+    const isSmallCosta = busName === "Small Costa";
+
+    let bus: any;
+    if (isSmallCosta) {
+      const eventId = await getActiveEventId(supabase);
+      bus = eventId ? await getSmallCostaBus(supabase, eventId) : null;
+    } else {
+      bus = await getPermanentBigCostaBus(supabase);
+    }
 
     if (!bus) {
-      return NextResponse.json({ ok: false, message: "Big Costa bus not configured for the permanent seat map." }, { status: 404 });
+      const notConfigured = isSmallCosta
+        ? "Small Costa bus not configured for the permanent seat map."
+        : "Big Costa bus not configured for the permanent seat map.";
+      return NextResponse.json({ ok: false, message: notConfigured }, { status: 404 });
     }
 
     if (!bus.event_id) {

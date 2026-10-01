@@ -3,6 +3,7 @@ import {
   normalizePaymentId,
   SEAT_ELIGIBILITY_THRESHOLD,
   getPermanentBigCostaBus,
+  getSmallCostaBus,
 } from "@/lib/seats";
 import { NextResponse } from "next/server";
 
@@ -123,6 +124,26 @@ export async function POST(
             ""
         )
       );
+
+    /*
+     * SMALL COSTA IS AN OPTIONAL SECOND BUS.
+     *
+     * The default stays "Big Costa" so the
+     * existing public portal keeps its exact
+     * behaviour. The frontend never supplies a
+     * bus id; it only asks for the Small Costa
+     * view and the server resolves the row.
+     */
+    const busName =
+      String(
+        body.bus ??
+          ""
+      )
+        .trim() ||
+      "Big Costa";
+
+    const isSmallCosta =
+      busName === "Small Costa";
 
     if (!reference.publicId && !reference.paymentCode) {
       recordFailedAttempt(
@@ -290,18 +311,29 @@ export async function POST(
      *
      * Seat occupancy is tied to this physical bus,
      * not to a newly-created event seat map.
+     *
+     * Small Costa is resolved explicitly by
+     * event_id + name, never by seat count and
+     * never by "the first bus returned".
      */
     const bus =
-      await getPermanentBigCostaBus(
-        supabase
-      );
+      isSmallCosta
+        ? await getSmallCostaBus(
+            supabase,
+            event.id
+          )
+        : await getPermanentBigCostaBus(
+            supabase
+          );
 
     if (!bus) {
       return jsonResponse(
         {
           ok: false,
           message:
-            "Big Costa bus is not configured for the permanent seat map.",
+            isSmallCosta
+              ? "Small Costa bus is not configured for this event."
+              : "Big Costa bus is not configured for the permanent seat map.",
         },
         404
       );
@@ -319,7 +351,7 @@ export async function POST(
 
     /*
      * Find the guest's currently occupied seat
-     * on the permanent Big Costa bus.
+     * on the resolved bus.
      *
      * We deliberately do NOT depend on event_id here.
      * This prevents a stale event relationship from
@@ -376,6 +408,70 @@ export async function POST(
       null;
 
     /*
+     * A member may hold a seat on ONE Costa bus
+     * only. When the requested bus is not the bus
+     * the member already sits on, report the seat
+     * they hold so the portal can block selection.
+     */
+    let hasSeatOnOtherBus = false;
+    let otherBusSeat: string | null = null;
+
+    if (isSmallCosta) {
+      const {
+        data: otherAssignments,
+        error: otherAssignmentsError,
+      } = await supabase
+        .from("seat_assignments")
+        .select(
+          "*, bus_seats:seat_id(seat_number)"
+        )
+        .eq(
+          "guest_id",
+          guest.id
+        )
+        .eq(
+          "event_id",
+          event.id
+        )
+        .eq(
+          "status",
+          "occupied"
+        )
+        .neq(
+          "bus_id",
+          bus.id
+        )
+        .order(
+          "updated_at",
+          {
+            ascending: false,
+          }
+        )
+        .limit(1)
+        .maybeSingle();
+
+      if (otherAssignmentsError) {
+        return jsonResponse(
+          {
+            ok: false,
+            message:
+              "Unable to load the current seat assignment.",
+          },
+          500
+        );
+      }
+
+      if (otherAssignments) {
+        hasSeatOnOtherBus = true;
+        otherBusSeat =
+          otherAssignments
+            ?.bus_seats
+            ?.seat_number ??
+          null;
+      }
+    }
+
+    /*
      * A valid public ID should no longer
      * count as a failed attempt.
      */
@@ -405,6 +501,10 @@ export async function POST(
       },
 
       selectedSeat,
+
+      hasSeatOnOtherBus,
+
+      otherBusSeat,
 
       totalPaid,
 

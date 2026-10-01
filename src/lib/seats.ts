@@ -46,6 +46,59 @@ export async function getPermanentBigCostaBus(supabase: ReturnType<typeof create
   return rows[0] ?? null;
 }
 
+export async function getBusByName(
+  supabase: ReturnType<typeof createAdminClient>,
+  eventId: string | null | undefined,
+  busName: string
+) {
+  if (!eventId) return null;
+
+  const { data, error } = await supabase
+    .from("event_buses")
+    .select("*")
+    .eq("event_id", eventId)
+    .eq("name", busName)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message ?? `Unable to resolve ${busName} bus.`);
+  }
+
+  return (data as any) ?? null;
+}
+
+export async function getSmallCostaBus(
+  supabase: ReturnType<typeof createAdminClient>,
+  eventId: string | null | undefined
+) {
+  return getBusByName(supabase, eventId, "Small Costa");
+}
+
+export async function getActiveEventId(supabase: ReturnType<typeof createAdminClient>) {
+  const { data, error } = await supabase
+    .from("events")
+    .select("id")
+    .eq("is_currently_active", true)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return (data as any).id;
+}
+
+export async function getSeatNumberById(
+  supabase: ReturnType<typeof createAdminClient>,
+  seatId: string
+) {
+  const { data, error } = await supabase
+    .from("bus_seats")
+    .select("seat_number")
+    .eq("id", seatId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return (data as any).seat_number ?? null;
+}
+
 export function positionLabel(position: number | null | undefined): "Window" | "Middle" | "Aisle" | "" {
   if (position === undefined || position === null) return "";
   if (position === 1 || position === 5) return "Window";

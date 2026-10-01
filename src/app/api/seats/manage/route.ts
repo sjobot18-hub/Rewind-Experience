@@ -5,6 +5,8 @@ import {
   SEAT_ELIGIBILITY_THRESHOLD,
   getGuestFullName,
   getPermanentBigCostaBus,
+  getSmallCostaBus,
+  getActiveEventId,
 } from "@/lib/seats";
 
 export const dynamic = "force-dynamic";
@@ -108,6 +110,116 @@ async function getPermanentBusAndEvent(
   };
 }
 
+/*
+ * SMALL COSTA RESOLUTION.
+ *
+ * Small Costa is resolved explicitly by
+ * event_id + name = "Small Costa". It is never
+ * identified by seat count and never by the first
+ * bus row the database returns. When the caller
+ * does not supply an event, the currently active
+ * event is used.
+ */
+async function getSmallCostaBusAndEvent(
+  supabase: ReturnType<typeof createAdminClient>,
+  requestedEventId: string | null
+) {
+  const eventId =
+    requestedEventId ||
+    (await getActiveEventId(
+      supabase
+    ));
+
+  if (!eventId) {
+    return {
+      bus: null,
+      event: null,
+      error:
+        "Small Costa bus could not be resolved without an event.",
+    };
+  }
+
+  const bus =
+    await getSmallCostaBus(
+      supabase,
+      eventId
+    );
+
+  if (!bus) {
+    return {
+      bus: null,
+      event: null,
+      error:
+        "Small Costa bus is not configured for this event.",
+    };
+  }
+
+  const {
+    data: event,
+    error: eventError,
+  } = await supabase
+    .from("events")
+    .select(
+      "id, name, year, event_date, seat_selection_open, seat_selection_deadline, allow_member_seat_changes"
+    )
+    .eq(
+      "id",
+      eventId
+    )
+    .maybeSingle();
+
+  if (eventError) {
+    return {
+      bus,
+      event: null,
+      error: eventError.message,
+    };
+  }
+
+  if (!event) {
+    return {
+      bus,
+      event: null,
+      error:
+        "The event linked to the Small Costa bus could not be found.",
+    };
+  }
+
+  return {
+    bus,
+    event,
+    error: null,
+  };
+}
+
+/*
+ * Resolve which Costa bus an admin request is
+ * operating on.
+ *
+ * The default stays "Big Costa", so every
+ * existing admin call keeps its exact
+ * behaviour.
+ */
+async function resolveRequestedBusAndEvent(
+  supabase: ReturnType<typeof createAdminClient>,
+  requestedBusName: string,
+  requestedEventId: string | null
+) {
+  if (
+    requestedBusName ===
+    "Small Costa"
+  ) {
+    return getSmallCostaBusAndEvent(
+      supabase,
+      requestedEventId
+    );
+  }
+
+  return getPermanentBusAndEvent(
+    supabase
+  );
+}
+
 export async function GET(
   request: Request
 ) {
@@ -145,8 +257,20 @@ export async function GET(
       event,
       error,
     } =
-      await getPermanentBusAndEvent(
-        supabase
+      await resolveRequestedBusAndEvent(
+        supabase,
+        new URL(
+          request.url
+        )
+          .searchParams.get(
+            "bus"
+          ) ?? "Big Costa",
+        new URL(
+          request.url
+        )
+          .searchParams.get(
+            "event_id"
+          )
       );
 
     if (error || !bus || !event) {
@@ -668,6 +792,10 @@ export async function GET(
 
       bus,
 
+      bus_name:
+        bus?.name ??
+        "Big Costa",
+
       seats: seatRows,
 
       assignments,
@@ -725,17 +853,38 @@ export async function POST(
       createAdminClient();
 
     /*
-     * ALWAYS resolve the permanent Big Costa
-     * bus and its controlling event from the
-     * database.
+     * ALWAYS resolve the Costa bus and its
+     * controlling event from the database.
+     *
+     * The frontend may ask for "Small Costa",
+     * but the bus row itself is always resolved
+     * here by event_id + name.
      */
+    const requestedBusName =
+      String(
+        body.bus ??
+          ""
+      )
+        .trim() ||
+      "Big Costa";
+
+    const requestedEventId =
+      String(
+        body.event_id ??
+          ""
+      )
+        .trim() ||
+      null;
+
     const {
       bus,
       event,
       error,
     } =
-      await getPermanentBusAndEvent(
-        supabase
+      await resolveRequestedBusAndEvent(
+        supabase,
+        requestedBusName,
+        requestedEventId
       );
 
     if (error || !bus || !event) {
@@ -1048,7 +1197,7 @@ export async function POST(
           {
             ok: false,
             message:
-              "Guest does not belong to the event currently attached to Big Costa.",
+              `Guest does not belong to the event currently attached to ${requestedBusName}.`,
           },
           409
         );
@@ -1214,6 +1363,86 @@ export async function POST(
             message: `This member already has seat ${guestSeatNumber}.`,
             existingSeat:
               guestSeatNumber,
+          },
+          409
+        );
+      }
+
+      /*
+       * A MEMBER MAY HOLD A SEAT ON ONE COSTA
+       * BUS ONLY.
+       *
+       * A Small Costa assignment must never
+       * silently replace a Big Costa seat (or
+       * the other way round), so an assignment
+       * on another bus is rejected here for both
+       * buses.
+       */
+      const {
+        data: otherBusSeat,
+        error: otherBusSeatError,
+      } = await supabase
+        .from("seat_assignments")
+        .select(
+          "*, bus_seats:seat_id(seat_number)"
+        )
+        .eq(
+          "guest_id",
+          guest.id
+        )
+        .eq(
+          "event_id",
+          event.id
+        )
+        .eq(
+          "status",
+          "occupied"
+        )
+        .neq(
+          "bus_id",
+          bus.id
+        )
+        .order(
+          "updated_at",
+          {
+            ascending: false,
+          }
+        )
+        .limit(1)
+        .maybeSingle();
+
+      if (
+        otherBusSeatError
+      ) {
+        return jsonResponse(
+          {
+            ok: false,
+            message:
+              otherBusSeatError.message ??
+              "Unable to check the guest's existing seat.",
+          },
+          500
+        );
+      }
+
+      if (otherBusSeat) {
+        const otherBusSeatNumber =
+          otherBusSeat
+            ?.bus_seats
+            ?.seat_number ??
+          null;
+
+        return jsonResponse(
+          {
+            ok: false,
+            message: `This member already has seat ${
+              otherBusSeatNumber ??
+              "on the other bus"
+            } on another Costa bus.`,
+            existingSeat:
+              otherBusSeatNumber ??
+              null,
+            hasSeatOnOtherBus: true,
           },
           409
         );
@@ -1635,7 +1864,10 @@ export async function POST(
       return jsonResponse({
         ok: true,
         message:
-          "All Big Costa seat assignments have been released.",
+          requestedBusName ===
+          "Small Costa"
+            ? "All Small Costa seat assignments have been released."
+            : "All Big Costa seat assignments have been released.",
         releasedCount,
       });
     }

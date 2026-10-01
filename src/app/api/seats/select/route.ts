@@ -3,6 +3,8 @@ import {
   normalizePaymentId,
   SEAT_ELIGIBILITY_THRESHOLD,
   getPermanentBigCostaBus,
+  getSmallCostaBus,
+  getSeatNumberById,
 } from "@/lib/seats";
 import { NextResponse } from "next/server";
 
@@ -44,6 +46,26 @@ export async function POST(
     )
       .trim()
       .toUpperCase();
+
+    /*
+     * SMALL COSTA IS AN OPTIONAL SECOND BUS.
+     *
+     * The default remains "Big Costa" so the
+     * existing public portal behaves exactly as
+     * before. The frontend only asks for the
+     * Small Costa view; the server resolves the
+     * actual event_buses row itself.
+     */
+    const busName =
+      String(
+        body.bus ??
+          ""
+      )
+        .trim() ||
+      "Big Costa";
+
+    const isSmallCosta =
+      busName === "Small Costa";
 
     if (!reference.publicId && !reference.paymentCode) {
       return jsonResponse(
@@ -261,18 +283,30 @@ export async function POST(
      *
      * This is the critical part of the permanent
      * seat architecture.
+     *
+     * Small Costa is resolved explicitly by
+     * event_id + name. It is never identified by
+     * seat count and never by the first bus the
+     * database happens to return.
      */
     const bus =
-      await getPermanentBigCostaBus(
-        supabase
-      );
+      isSmallCosta
+        ? await getSmallCostaBus(
+            supabase,
+            event.id
+          )
+        : await getPermanentBigCostaBus(
+            supabase
+          );
 
     if (!bus) {
       return jsonResponse(
         {
           ok: false,
           message:
-            "Big Costa bus not configured for the permanent seat map.",
+            isSmallCosta
+              ? "Small Costa bus not configured for this event."
+              : "Big Costa bus not configured for the permanent seat map.",
         },
         404
       );
@@ -290,7 +324,7 @@ export async function POST(
 
     /*
      * Find the requested seat ONLY inside
-     * the permanent Big Costa bus.
+     * the resolved Costa bus.
      */
     const {
       data: busSeat,
@@ -438,6 +472,87 @@ export async function POST(
             "Unable to check your current seat assignment.",
         },
         500
+      );
+    }
+
+    /*
+     * A MEMBER MAY HOLD A SEAT ON ONE COSTA BUS
+     * ONLY.
+     *
+     * This check is evaluated for BOTH buses, so a
+     * member holding a Big Costa seat can never
+     * select a Small Costa seat, and a member
+     * holding a Small Costa seat can never select
+     * a Big Costa seat.
+     */
+    const {
+      data: otherBusAssignment,
+      error: otherBusAssignmentError,
+    } = await supabase
+      .from("seat_assignments")
+      .select(
+        "*, bus_seats:seat_id(seat_number)"
+      )
+      .eq(
+        "guest_id",
+        guest.id
+      )
+      .eq(
+        "event_id",
+        event.id
+      )
+      .eq(
+        "status",
+        "occupied"
+      )
+      .neq(
+        "bus_id",
+        bus.id
+      )
+      .order(
+        "updated_at",
+        {
+          ascending: false,
+        }
+      )
+      .limit(1)
+      .maybeSingle();
+
+    if (otherBusAssignmentError) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            "Unable to check your current seat assignment.",
+        },
+        500
+      );
+    }
+
+    if (otherBusAssignment) {
+      const otherBusSeatNumber =
+        otherBusAssignment
+          ?.bus_seats
+          ?.seat_number ??
+        (await getSeatNumberById(
+          supabase,
+          otherBusAssignment.seat_id
+        ));
+
+      return jsonResponse(
+        {
+          ok: false,
+          message: `You already have a seat assigned (seat ${
+            otherBusSeatNumber ??
+            "unknown"
+          }). You cannot select a seat on a different bus.`,
+          code: "HAS_SEAT_ON_OTHER_BUS",
+          otherBusSeat:
+            otherBusSeatNumber ??
+            null,
+          hasSeatOnOtherBus: true,
+        },
+        409
       );
     }
 

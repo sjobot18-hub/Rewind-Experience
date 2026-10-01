@@ -71,6 +71,22 @@ export default function BusSeatManagementClient({
   ] = useState(false);
 
   /*
+   * BUS SELECTION.
+   *
+   * The default stays "Big Costa" so the
+   * existing admin screen keeps its exact
+   * behaviour. Small Costa is an alternative bus
+   * an admin can manage from the same screen.
+   */
+  const [
+    busName,
+    setBusName,
+  ] = useState("Big Costa");
+
+  const isSmallCosta =
+    busName === "Small Costa";
+
+  /*
    * Convert database ISO datetime into
    * the browser's datetime-local value.
    */
@@ -124,7 +140,15 @@ export default function BusSeatManagementClient({
 
           const response =
             await fetch(
-              "/api/seats/manage",
+              `/api/seats/manage?bus=${encodeURIComponent(
+                busName
+              )}${
+                event?.id
+                  ? `&event_id=${encodeURIComponent(
+                      String(event.id)
+                    )}`
+                  : ""
+              }`,
               {
                 method:
                   "GET",
@@ -198,11 +222,15 @@ export default function BusSeatManagementClient({
           setLoading(false);
         }
       },
-      []
+      [
+        busName,
+        event?.id,
+      ]
     );
 
   /*
-   * Initial load.
+   * Initial load, and a reload whenever the
+   * admin switches between the Costa buses.
    */
   useEffect(() => {
     loadSeatMap();
@@ -378,12 +406,14 @@ export default function BusSeatManagementClient({
    * RESET ALL SEATS
    */
   async function resetAllSeats() {
-    const confirmed =
-      window.confirm(
-        "Reset all seats?\n\n" +
-          "This will release every current Big Costa seat assignment and make all 36 seats available.\n\n" +
-          "Guest and payment records will not be affected."
-      );
+const confirmed =
+        window.confirm(
+          `Reset all ${busName} seats?\n\n` +
+            (isSmallCosta
+              ? "This will release every current Small Costa seat assignment and make all 13 seats available.\n\n"
+              : "This will release every current Big Costa seat assignment and make all 36 seats available.\n\n") +
+            "Guest and payment records will not be affected."
+        );
 
     if (!confirmed) {
       return;
@@ -411,6 +441,10 @@ export default function BusSeatManagementClient({
               JSON.stringify({
                 action:
                   "reset_all_seats",
+                bus: busName,
+                event_id:
+                  event?.id ??
+                  null,
               }),
           }
         );
@@ -434,7 +468,7 @@ export default function BusSeatManagementClient({
       setGuestQuery("");
 
       setMessage(
-        `${json.releasedCount ?? 0} Big Costa seat assignment${
+        `${json.releasedCount ?? 0} ${busName} seat assignment${
           json.releasedCount ===
           1
             ? ""
@@ -504,6 +538,10 @@ export default function BusSeatManagementClient({
               JSON.stringify({
                 action:
                   "release",
+                bus: busName,
+                event_id:
+                  event?.id ??
+                  null,
                 seat_id:
                   seat.seat_id,
               }),
@@ -625,6 +663,10 @@ export default function BusSeatManagementClient({
               JSON.stringify({
                 action:
                   "assign",
+                bus: busName,
+                event_id:
+                  event?.id ??
+                  null,
                 seat_id:
                   selectedSeat.seat_id,
                 guest_id:
@@ -690,8 +732,40 @@ export default function BusSeatManagementClient({
           </h1>
 
           <div className="text-sm text-slate-500">
-            Big Costa
+            {busName}
           </div>
+        </div>
+
+        <div className="flex gap-1 p-1 bg-slate-100 rounded-lg">
+          <button
+            type="button"
+            className={`px-3 py-1.5 text-xs font-bold rounded ${
+              !isSmallCosta
+                ? "bg-navy text-white"
+                : "text-slate-600 hover:bg-slate-200"
+            }`}
+            onClick={() =>
+              setBusName("Big Costa")
+            }
+            disabled={loading}
+          >
+            Big Costa
+          </button>
+
+          <button
+            type="button"
+            className={`px-3 py-1.5 text-xs font-bold rounded ${
+              isSmallCosta
+                ? "bg-navy text-white"
+                : "text-slate-600 hover:bg-slate-200"
+            }`}
+            onClick={() =>
+              setBusName("Small Costa")
+            }
+            disabled={loading}
+          >
+            Small Costa
+          </button>
         </div>
       </div>
 
@@ -723,7 +797,7 @@ export default function BusSeatManagementClient({
           </span>
 
           <p className="text-sm mt-2">
-            Big Costa
+            {busName}
           </p>
         </div>
       </div>
@@ -840,7 +914,7 @@ export default function BusSeatManagementClient({
       <div className="card seat-map-card">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="font-black text-navy">
-            Big Costa Seat Map
+            {busName} Seat Map
           </span>
 
           <span className="flex items-center gap-2">
