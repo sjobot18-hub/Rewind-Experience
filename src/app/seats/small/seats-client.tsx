@@ -108,7 +108,22 @@ export default function SmallSeatsClient() {
     }
   }
 
-  const seatRows = Array.from(new Set(mapSeats.map((s) => Number(s.row_number ?? 0)))).sort((a, b) => a - b);
+  /*
+   * F1 (row_number 0) is the front passenger seat
+   * and sits ABOVE the numbered rows, so it is
+   * pulled out of the row loop instead of being
+   * rendered as "Row 0".
+   */
+  const frontSeat =
+    mapSeats.find((s) => Number(s.row_number ?? 0) === 0) ?? null;
+
+  const passengerSeats = mapSeats.filter(
+    (s) => Number(s.row_number ?? 0) !== 0
+  );
+
+  const seatRows = Array.from(
+    new Set(passengerSeats.map((s) => Number(s.row_number)))
+  ).sort((a, b) => a - b);
 
   return (
     <main className="seat-portal min-h-screen">
@@ -174,9 +189,41 @@ export default function SmallSeatsClient() {
                       <span className="bus-label">Front of Bus</span>
                       <span className="bus-label text-right">Back of Bus</span>
                     </div>
+                    {frontSeat && (
+                      <div className="front-seat-wrap">
+                        <button
+                          className={[
+                            "seat-card",
+                            frontSeat.status === "occupied" ? "occupied-card" : "",
+                            frontSeat.status === "disabled" ? "disabled-card" : "",
+                            frontSeat.status === "available" ? "available-card" : "",
+                            selected === frontSeat.seat_number ? "selected-card" : "",
+                          ].join(" ")}
+                          title={`${frontSeat.seat_number} ${frontSeat.seat_type}`}
+                          onClick={() => {
+                            if (frontSeat.status === "occupied" || frontSeat.status === "disabled") {
+                              setError("That seat is currently unavailable.");
+                              return;
+                            }
+                            selectLocalSeat(frontSeat.seat_number);
+                          }}
+                        >
+                          <span className="seat-number">{frontSeat.seat_number}</span>
+                          <span className="seat-type">Front Passenger</span>
+                          <span className="seat-name">
+                            {frontSeat.status === "occupied"
+                              ? frontSeat.display_name
+                              : "AVAILABLE"}
+                          </span>
+                          {selected === frontSeat.seat_number && (
+                            <span className="seat-selected-label">YOUR SEAT</span>
+                          )}
+                        </button>
+                      </div>
+                    )}
                     <div className="seat-rows">
                       {seatRows.map((rowNumber) => {
-                        const rowSeats = mapSeats.filter((s) => Number(s.row_number) === rowNumber).sort((a, b) => Number(a.position_in_row) - Number(b.position_in_row));
+                        const rowSeats = passengerSeats.filter((s) => Number(s.row_number) === rowNumber).sort((a, b) => Number(a.position_in_row) - Number(b.position_in_row));
                         return (
                           <div className="seat-row" key={rowNumber}>
                             {rowSeats.map((seat) => {
@@ -283,6 +330,7 @@ export default function SmallSeatsClient() {
         .bus-front { height: 58px; background: #102a43; border-radius: 12px 12px 0 0; text-align: center; display: flex; align-items: center; justify-content: center; color: #fff; }
         .bus-driver { border-radius: 10px; border: 1px solid #e2e8f0; padding: 4px 14px; font-weight: 800; background: #27415c; }
         .rows-wrap { margin-top: 14px; }
+        .front-seat-wrap { display: flex; justify-content: center; margin-bottom: 12px; }
         .bus-title-row { display: flex; justify-content: space-between; font-size: 11px; font-weight: 800; color: #475569; margin-bottom: 10px; }
         .seat-rows { display: flex; flex-direction: column; gap: 8px; }
         .seat-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; justify-content: center; }

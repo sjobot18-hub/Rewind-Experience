@@ -99,12 +99,35 @@ export async function getSeatNumberById(
   return (data as any).seat_number ?? null;
 }
 
-export function positionLabel(position: number | null | undefined): "Window" | "Middle" | "Aisle" | "" {
+/*
+ * SEAT POSITION LABELS ARE DERIVED FROM THE BUS
+ * WIDTH, NOT HARDCODED TO BIG COSTA.
+ *
+ * seatsPerRow comes from the bus row itself
+ * (event_buses.seats_per_row), so a 3-wide bus
+ * labels its ends as windows while the 5-wide
+ * Big Costa keeps exactly the labels it had:
+ *
+ *   5-wide -> 1,5 Window | 3 Aisle | 2,4 Middle
+ *   3-wide -> 1,3 Window | 2 Aisle
+ */
+export function positionLabel(
+  position: number | null | undefined,
+  seatsPerRow: number | null | undefined = 5
+): "Window" | "Middle" | "Aisle" | "" {
   if (position === undefined || position === null) return "";
-  if (position === 1 || position === 5) return "Window";
-  if (position === 2 || position === 4) return "Middle";
-  if (position === 3) return "Aisle";
-  return "";
+
+  const seats = Number(seatsPerRow);
+  if (!Number.isFinite(seats) || seats < 2) return "";
+  if (position < 1 || position > seats) return "";
+
+  /* The two ends of any row are window seats. */
+  if (position === 1 || position === seats) return "Window";
+
+  /* An odd-width row has a single centre aisle seat. */
+  if (seats % 2 === 1 && position === Math.ceil(seats / 2)) return "Aisle";
+
+  return "Middle";
 }
 
 export interface SeatRowData {
