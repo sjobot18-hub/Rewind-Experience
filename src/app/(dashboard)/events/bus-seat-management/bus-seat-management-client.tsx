@@ -87,6 +87,21 @@ export default function BusSeatManagementClient({
     busName === "Small Costa";
 
   /*
+   * BUS WIDTH.
+   *
+   * Comes from the resolved bus row
+   * (event_buses.seats_per_row) so the seat map
+   * labels and lays out each Costa bus according
+   * to its own configuration. Defaults to 5,
+   * which is Big Costa's width, so the existing
+   * Big Costa rendering is unchanged.
+   */
+  const [
+    seatsPerRow,
+    setSeatsPerRow,
+  ] = useState(5);
+
+  /*
    * Convert database ISO datetime into
    * the browser's datetime-local value.
    */
@@ -203,6 +218,30 @@ export default function BusSeatManagementClient({
               ? json.seats
               : []
           );
+
+          /*
+           * The bus row is authoritative for its
+           * own width. Only adopt it when it is a
+           * usable number, otherwise keep the
+           * current width (5 for Big Costa).
+           */
+          const busSeatsPerRow =
+            Number(
+              json.bus
+                ?.seats_per_row ??
+                NaN
+            );
+
+          if (
+            Number.isFinite(
+              busSeatsPerRow
+            ) &&
+            busSeatsPerRow >= 2
+          ) {
+            setSeatsPerRow(
+              busSeatsPerRow
+            );
+          }
 
           setEligibleGuests(
             Array.isArray(
@@ -965,7 +1004,10 @@ const confirmed =
                     <div className="flex gap-1.5 sm:gap-2">
                       {row.seats.map((seat: any) => {
                         const pos = seat.position_in_row;
-                        const label = positionLabel(pos);
+                        const label = positionLabel(
+                          pos,
+                          seatsPerRow
+                        );
                         return (
                           <div key={seat.seat_id} className="flex flex-col items-center">
                             <div className="seat-card">
