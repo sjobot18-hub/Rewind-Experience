@@ -180,7 +180,7 @@ export default function PaymentsClient({
               <p className="font-semibold">{formatNaira(p.amount)}</p>
               <p className="text-xs text-slate-400">{p.public_payment_id ?? "—"}</p>
             </div>
-            <p className="text-sm text-slate-500">{p.guests?.full_name} ({p.guests?.guest_code})</p>
+            <p className="text-sm text-slate-500">{p.guests?.full_name ?? p.guest_name_snapshot ?? "Deleted guest"} ({p.guests?.guest_code ?? p.guest_code_snapshot ?? "No guest ID"})</p>
             <p className="text-xs text-slate-400">{formatDate(p.paid_at)} · {p.payment_method} · {p.receipt_number}</p>
             <p className="text-[11px] text-slate-500 mt-1">Internal Payment Code: {p.payment_code}</p>
             {!p.is_voided && (
