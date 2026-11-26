@@ -25,135 +25,28 @@ export async function POST(request: Request) {
     const guestId = String(body.guest_id ?? "").trim();
     const eventId = String(body.event_id ?? "").trim();
 
-    if (!guestId) {
-      return jsonResponse({ ok: false, message: "Guest ID is required." }, 400);
-    }
-    if (!eventId) {
-      return jsonResponse({ ok: false, message: "Event ID is required." }, 400);
+    if (!guestId || !eventId) {
+      return jsonResponse({ ok: false, message: "Guest ID and Event ID are required." }, 400);
     }
 
     const supabase = createAdminClient();
+    const { data, error } = await supabase.rpc("delete_guest_preserve_payments", {
+      p_guest_id: guestId,
+      p_event_id: eventId,
+      p_actor_id: user?.id ?? null,
+      p_actor_email: profile?.email ?? "",
+    });
 
-    const { data: guest } = await supabase
-      .from("guests")
-      .select("*")
-      .eq("id", guestId)
-      .eq("event_id", eventId)
-      .single();
-
-    if (!guest) {
-      return jsonResponse({ ok: false, message: "Guest not found." }, 404);
-    }
-
-    const { data: payments } = await supabase
-      .from("payments")
-      .select("*")
-      .eq("guest_id", guestId)
-      .eq("event_id", eventId);
-
-    const activePayments = (payments ?? []).filter((p) => !p.is_voided);
-    if (activePayments.length > 0) {
-      return jsonResponse(
-        { ok: false, message: "This guest cannot be deleted because payment records exist for this guest. Void or otherwise resolve the payment records first." },
-        400
-      );
-    }
-
-    const { data: seatAssignments } = await supabase
-      .from("seat_assignments")
-      .select("id, status")
-      .eq("guest_id", guestId)
-      .eq("event_id", eventId);
-
-    const activeSeatAssignments = (seatAssignments ?? []).filter((sa) => sa.status === "occupied");
-    if (activeSeatAssignments.length > 0) {
-      return jsonResponse(
-        { ok: false, message: "This guest cannot be deleted because they currently have a seat assignment. Release the seat first." },
-        400
-      );
-    }
-
-    const voidedPayments = (payments ?? []).filter((p) => p.is_voided);
-
-    const previousGuestData = {
-      id: guest.id,
-      event_id: guest.event_id,
-      guest_code: guest.guest_code,
-      full_name: guest.full_name,
-      phone_number: guest.phone_number,
-      gender: guest.gender,
-      ticket_fee: guest.ticket_fee,
-      notes: guest.notes,
-      registered_at: guest.registered_at,
-      registered_by: guest.registered_by,
-    };
-
-    if (voidedPayments.length > 0) {
-      const deletedVoidedPayments = [];
-
-      for (const payment of voidedPayments) {
-        deletedVoidedPayments.push(payment);
-
-        const { error: deleteError } = await supabase
-          .from("payments")
-          .delete()
-          .eq("id", payment.id)
-          .eq("event_id", eventId);
-
-        if (deleteError) {
-          return jsonResponse({ ok: false, message: deleteError.message }, 500);
-        }
-      }
-
-      const { error: guestDeleteError } = await supabase
-        .from("guests")
-        .delete()
-        .eq("id", guestId)
-        .eq("event_id", eventId);
-
-      if (guestDeleteError) {
-        return jsonResponse({ ok: false, message: guestDeleteError.message }, 500);
-      }
-
-      await supabase.from("audit_logs").insert({
-        event_id: eventId,
-        actor_id: user?.id ?? "",
-        actor_email: profile?.email ?? "",
-        action: "guest_deleted",
-        record_type: "guest",
-        record_id: guestId,
-        previous_value: {
-          ...previousGuestData,
-          deleted_voided_payments: deletedVoidedPayments,
-        },
-        new_value: null,
-      });
-    } else {
-      const { error: deleteError } = await supabase
-        .from("guests")
-        .delete()
-        .eq("id", guestId)
-        .eq("event_id", eventId);
-
-      if (deleteError) {
-        return jsonResponse({ ok: false, message: deleteError.message }, 500);
-      }
-
-      await supabase.from("audit_logs").insert({
-        event_id: eventId,
-        actor_id: user?.id ?? "",
-        actor_email: profile?.email ?? "",
-        action: "guest_deleted",
-        record_type: "guest",
-        record_id: guestId,
-        previous_value: previousGuestData,
-        new_value: null,
-      });
+    if (error) {
+      const message = error.message ?? "Failed to delete guest.";
+      const status = message.toLowerCase().includes("guest not found") ? 404 : 500;
+      return jsonResponse({ ok: false, message }, status);
     }
 
     return jsonResponse({
       ok: true,
-      message: "Guest deleted successfully.",
+      message: "Guest removed. Payment history has been preserved.",
+      result: data,
     });
   } catch (error: any) {
     return jsonResponse({ ok: false, message: error?.message ?? "Failed to delete guest." }, 500);
