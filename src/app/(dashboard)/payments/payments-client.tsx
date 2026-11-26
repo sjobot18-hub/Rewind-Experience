@@ -210,7 +210,7 @@ export default function PaymentsClient({
                 <td className="py-2 pr-4">{p.payment_code}</td>
                 <td className="py-2 pr-4">{p.public_payment_id ?? "—"}</td>
                 <td className="py-2 pr-4">{formatDate(p.paid_at)}</td>
-                <td className="py-2 pr-4">{p.guests?.full_name} ({p.guests?.guest_code})</td>
+                <td className="py-2 pr-4">{p.guests?.full_name ?? p.guest_name_snapshot ?? "Deleted guest"} ({p.guests?.guest_code ?? p.guest_code_snapshot ?? "No guest ID"})</td>
                 <td className="py-2 pr-4">{formatNaira(p.amount)}</td>
                 <td className="py-2 pr-4 capitalize">{p.payment_method}</td>
                 <td className="py-2 pr-4">{p.receipt_number}</td>
