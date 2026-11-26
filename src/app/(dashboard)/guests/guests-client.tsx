@@ -192,11 +192,13 @@ export default function GuestsClient({
         return;
       }
       setDeleteOpen(false);
+      setDeletingGuest(null);
       await refreshGuests();
     } catch (err: any) {
       setDeleteError(err?.message ?? "Failed to delete guest.");
+    } finally {
+      setDeleteSubmitting(false);
     }
-    setDeleteSubmitting(false);
   }
 
   return (
@@ -387,8 +389,13 @@ export default function GuestsClient({
               <button onClick={() => setDeleteOpen(false)} className="btn-secondary text-xs py-1.5 px-3">Close</button>
             </div>
             <div className="p-4 space-y-3">
-              <p className="text-slate-700">Delete this guest?</p>
+              <p className="text-slate-700">Remove this guest from the active guest register?</p>
               <p className="font-semibold text-slate-900">{deletingGuest.full_name}</p>
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900 space-y-1">
+                <p>The guest will be permanently removed from the active register.</p>
+                <p>All payment records, including voided payments, will remain in payment and finance history with the guest's saved name, guest ID, phone number, and ticket fee.</p>
+                <p>Any seat assignment for this guest will be released.</p>
+              </div>
               {deleteError && (
                 <div className="bg-red-50 text-unpaid text-sm rounded-lg px-4 py-3">{deleteError}</div>
               )}
@@ -397,7 +404,7 @@ export default function GuestsClient({
                   Cancel
                 </button>
                 <button onClick={handleDeleteGuest} disabled={deleteSubmitting} className="bg-unpaid text-white py-2 px-4 rounded-lg font-medium hover:bg-red-700 disabled:opacity-50">
-                  {deleteSubmitting ? "Deleting..." : "Delete Guest"}
+                  {deleteSubmitting ? "Removing..." : "Remove Guest"}
                 </button>
               </div>
             </div>
