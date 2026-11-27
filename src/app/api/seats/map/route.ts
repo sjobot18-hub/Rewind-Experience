@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getPermanentBigCostaBus, getActiveEventId, getSmallCostaBus, normalizeBusSeatType, seatDisplayNameFromAssignment, SEAT_ELIGIBILITY_THRESHOLD } from "@/lib/seats";
+import { getPermanentBigCostaBus, getActiveEventId, getSmallCostaBus, normalizePaymentId, normalizeBusSeatType, seatDisplayNameFromAssignment, SEAT_ELIGIBILITY_THRESHOLD } from "@/lib/seats";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -13,9 +13,10 @@ export async function GET(request: Request) {
     const busName = url.searchParams.get("bus") ?? "Big Costa";
     const isSmallCosta = busName === "Small Costa";
     const paymentId = (url.searchParams.get("paymentId") ?? "").trim();
+    const paymentReference = normalizePaymentId(paymentId);
 
     // Both Costa maps require a valid payment ID and an open seat-selection window.
-    if (!paymentId) {
+    if (!paymentReference.publicId && !paymentReference.paymentCode) {
       return NextResponse.json(
         { ok: false, message: "Verify your payment ID before viewing seats." },
         { status: 401 }
@@ -24,8 +25,15 @@ export async function GET(request: Request) {
 
     const { data: payment, error: paymentError } = await supabase
       .from("payments")
-      .select("guest_id, event_id, is_voided, public_payment_id")
-      .ilike("public_payment_id", paymentId)
+      .select("guest_id, event_id, is_voided, public_payment_id, payment_code")
+      .or([
+        paymentReference.publicId
+          ? `public_payment_id.ilike.${paymentReference.publicId}`
+          : "",
+        paymentReference.paymentCode
+          ? `payment_code.ilike.${paymentReference.paymentCode}`
+          : "",
+      ].filter(Boolean).join(","))
       .maybeSingle();
 
     if (paymentError || !payment || payment.is_voided || !payment.guest_id || !payment.event_id) {
