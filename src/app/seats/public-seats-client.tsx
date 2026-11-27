@@ -227,6 +227,13 @@ export default function PublicSeatsClient() {
         {message && <p className="mt-3 text-sm font-medium text-slate-700" role="status">{message}</p>}
       </section>}
 
+      {closed && (
+        <section className="mx-auto max-w-2xl rounded-2xl border border-amber-300 bg-amber-50 p-6 text-center shadow-sm" role="status">
+          <h2 className="text-xl font-bold text-amber-900">Seat Selection Currently Closed</h2>
+          <p className="mt-2 text-sm text-amber-800">Seat selection for Big Costa is currently closed. Please check back later when it reopens.</p>
+        </section>
+      )}
+
       {confirmedSeat && verification && (
         <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-slate-800">
           <h2 className="text-xl font-black text-emerald-900">Seat Confirmed</h2>
@@ -239,7 +246,7 @@ export default function PublicSeatsClient() {
         </section>
       )}
 
-      {verification && <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      {verification && !closed && <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-black text-slate-900">Big Costa Seat Map</h2>
