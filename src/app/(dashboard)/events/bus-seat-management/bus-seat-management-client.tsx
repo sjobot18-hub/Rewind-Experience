@@ -370,6 +370,8 @@ export default function BusSeatManagementClient({
               JSON.stringify({
                 action:
                   "seat_selection",
+                bus: busName,
+                event_id: event?.id ?? null,
                 seat_selection_open:
                   nextOpen,
                 seat_selection_deadline:
