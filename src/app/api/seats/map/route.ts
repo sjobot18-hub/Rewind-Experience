@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getPermanentBigCostaBus, getActiveEventId, getSmallCostaBus, normalizeBusSeatType, seatDisplayNameFromAssignment } from "@/lib/seats";
+import { getPermanentBigCostaBus, getActiveEventId, getSmallCostaBus, normalizeBusSeatType, seatDisplayNameFromAssignment, SEAT_ELIGIBILITY_THRESHOLD } from "@/lib/seats";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +12,32 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const busName = url.searchParams.get("bus") ?? "Big Costa";
     const isSmallCosta = busName === "Small Costa";
+
+    // Big Costa's public map is only returned after a valid payment ID is verified.
+    if (!isSmallCosta) {
+      const paymentId = (url.searchParams.get("paymentId") ?? "").trim();
+      if (!paymentId) {
+        return NextResponse.json({ ok: false, message: "Verify your payment ID before viewing seats." }, { status: 401 });
+      }
+      const { data: payment, error: paymentError } = await supabase
+        .from("payments")
+        .select("guest_id, event_id, is_voided, public_payment_id")
+        .ilike("public_payment_id", paymentId)
+        .maybeSingle();
+      if (paymentError || !payment || payment.is_voided || !payment.guest_id || !payment.event_id) {
+        return NextResponse.json({ ok: false, message: "Invalid payment ID." }, { status: 403 });
+      }
+      const { data: validPayments, error: validPaymentsError } = await supabase
+        .from("payments")
+        .select("amount")
+        .eq("guest_id", payment.guest_id)
+        .eq("event_id", payment.event_id)
+        .eq("is_voided", false);
+      const totalPaid = (validPayments ?? []).reduce((sum: number, row: any) => sum + Number(row.amount ?? 0), 0);
+      if (validPaymentsError || totalPaid < SEAT_ELIGIBILITY_THRESHOLD) {
+        return NextResponse.json({ ok: false, message: "You need at least ₦5,000 total valid payment before viewing seats." }, { status: 403 });
+      }
+    }
 
     let bus: any;
     if (isSmallCosta) {
