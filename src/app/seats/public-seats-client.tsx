@@ -270,14 +270,34 @@ export default function PublicSeatsClient() {
                       <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">
                         FRONT / DRIVER
                       </div>
-                      <div
-                        className="rounded-lg border-2 border-navy bg-navy px-8 py-3 text-center"
+                      <button
+                        type="button"
+                        disabled={
+                          !verification?.seatSelectionOpen ||
+                          layout.frontSeat.status !== "available" ||
+                          (hasExistingSeat && !verification?.canChangeSeats) ||
+                          confirming
+                        }
+                        onClick={() => chooseSeat(layout.frontSeat!)}
+                        className={`rounded-lg border-2 px-8 py-3 text-center disabled:cursor-not-allowed disabled:opacity-70 ${
+                          pendingSeat?.seat_id === layout.frontSeat.seat_id
+                            ? "border-sky-600 bg-sky-50"
+                            : verification?.selectedSeat === layout.frontSeat.seat_number
+                              ? "border-emerald-600 bg-emerald-50"
+                              : layout.frontSeat.status === "available"
+                                ? "border-emerald-300 bg-white"
+                                : "border-slate-300 bg-slate-100"
+                        }`}
                       >
-                        <span className="block text-xl font-black text-white">{layout.frontSeat.seat_number}</span>
-                        <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-300">
-                          Front Passenger
+                        <span className="block text-xl font-black text-slate-900">{layout.frontSeat.seat_number}</span>
+                        <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                          {pendingSeat?.seat_id === layout.frontSeat.seat_id
+                            ? "Selected"
+                            : verification?.selectedSeat === layout.frontSeat.seat_number
+                              ? "Your seat"
+                              : "Front Passenger"}
                         </span>
-                      </div>
+                      </button>
                     </div>
                   )}
 
