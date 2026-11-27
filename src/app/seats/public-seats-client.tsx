@@ -169,7 +169,7 @@ export default function PublicSeatsClient() {
 
       if (!response.ok || !json.ok) {
         setMessage(json.message ?? "Unable to select that seat.");
-        await loadMap();
+        await loadMap(verification.paymentId);
         return;
       }
 
@@ -181,7 +181,7 @@ export default function PublicSeatsClient() {
       setConfirmedSeat(json.seat ?? pendingSeat.seat_number);
       setPendingSeat(null);
       setMessage(null);
-      await loadMap();
+      await loadMap(verification.paymentId);
     } catch {
       setMessage("Unable to select that seat.");
     } finally {
@@ -222,18 +222,7 @@ export default function PublicSeatsClient() {
         </form>
 
 
-        {verification && (
-          <div className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
-            <p className="font-bold">{verification.fullName}</p>
-            <p>{verification.paymentId}</p>
-            <p className="mt-2 font-semibold text-emerald-700">Eligible for seat selection</p>
-            {hasExistingSeat && <p className="mt-2">Your seat is already assigned: <strong>{verification.selectedSeat}</strong></p>}
-            {hasExistingSeat && !verification.canChangeSeats && <p className="mt-1 text-slate-600">Seat changes are not available for this event.</p>}
-            {hasExistingSeat && verification.canChangeSeats && !closed && <p className="mt-1 text-slate-600">Choose one available seat below to change your seat.</p>}
-            {closed && <p className="mt-2 font-semibold text-amber-700">Seat selection is currently closed.</p>}
-            {!closed && verification.deadline && <p className="mt-2">Selection deadline: {new Date(verification.deadline).toLocaleString()}</p>}
-          </div>
-        )}
+
 
         {message && <p className="mt-3 text-sm font-medium text-slate-700" role="status">{message}</p>}
       </section>}
