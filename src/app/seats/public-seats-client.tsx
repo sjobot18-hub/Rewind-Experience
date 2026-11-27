@@ -60,11 +60,12 @@ export default function PublicSeatsClient() {
   const [confirming, setConfirming] = useState(false);
   const [confirmedSeat, setConfirmedSeat] = useState<string | null>(null);
 
-  const loadMap = useCallback(async () => {
+  const loadMap = useCallback(async (verifiedPaymentId?: string) => {
+    if (!verifiedPaymentId) return;
     setMapLoading(true);
 
     try {
-      const response = await fetch("/api/seats/map", {
+      const response = await fetch(`/api/seats/map?paymentId=${encodeURIComponent(verifiedPaymentId)}`, {
         cache: "no-store",
         headers: noStoreHeaders,
       });
@@ -85,9 +86,6 @@ export default function PublicSeatsClient() {
     }
   }, []);
 
-  useEffect(() => {
-    void loadMap();
-  }, [loadMap]);
 
   async function verifyPayment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -123,7 +121,7 @@ export default function PublicSeatsClient() {
       setPendingSeat(null);
       setConfirmedSeat(null);
       setMessage(null);
-      await loadMap();
+      await loadMap(json.payment.public_payment_id ?? paymentId.trim());
     } catch {
       setVerification(null);
       setMessage("Payment verification failed.");
@@ -202,24 +200,27 @@ export default function PublicSeatsClient() {
         <p className="mt-2 text-slate-600">Big Costa Seat Selection</p>
       </header>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <form className="flex flex-col gap-3 sm:flex-row" onSubmit={verifyPayment}>
+      {!verification && <section className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <h2 className="text-2xl font-black text-slate-900">Payment ID verification</h2>
+        <p className="mt-4 font-bold text-slate-500">Enter your payment ID to continue.</p>
+        <p className="mt-3 text-sm text-slate-500">You need at least ₦5,000 total valid payment before selecting a seat.</p>
+        <form className="mt-6 flex flex-col gap-3" onSubmit={verifyPayment}>
           <label className="flex-1">
-            <span className="mb-1 block text-sm font-semibold text-slate-700">Enter your Payment ID to continue</span>
+            <span className="mb-2 block text-sm font-semibold text-slate-700">Payment ID</span>
             <input
               className="w-full rounded-lg border border-slate-300 px-3 py-2"
               value={paymentId}
               onChange={(event) => setPaymentId(event.target.value)}
-              placeholder="PAY-123456"
+              placeholder="Enter payment ID"
               autoComplete="off"
               required
             />
           </label>
-          <button className="mt-auto rounded-lg bg-slate-900 px-4 py-2 font-bold text-white disabled:opacity-60" disabled={verifying} type="submit">
-            {verifying ? "Verifying…" : "Continue"}
+          <button className="rounded-lg bg-[#102a43] px-4 py-4 font-bold tracking-wider text-white disabled:opacity-60" disabled={verifying} type="submit">
+            {verifying ? "Verifying..." : "Verify Payment ID"}
           </button>
         </form>
-        <p className="mt-2 text-xs text-slate-500">Use the Payment ID from your Rewind Experience payment receipt.</p>
+
 
         {verification && (
           <div className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
@@ -235,7 +236,7 @@ export default function PublicSeatsClient() {
         )}
 
         {message && <p className="mt-3 text-sm font-medium text-slate-700" role="status">{message}</p>}
-      </section>
+      </section>}
 
       {confirmedSeat && verification && (
         <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-slate-800">
@@ -249,7 +250,7 @@ export default function PublicSeatsClient() {
         </section>
       )}
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      {verification && <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-black text-slate-900">Big Costa Seat Map</h2>
@@ -351,7 +352,7 @@ export default function PublicSeatsClient() {
             </div>
           </div>
         )}
-      </section>
+      </section>}
     </main>
   );
 }
