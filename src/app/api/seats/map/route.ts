@@ -12,50 +12,85 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const busName = url.searchParams.get("bus") ?? "Big Costa";
     const isSmallCosta = busName === "Small Costa";
+    const paymentId = (url.searchParams.get("paymentId") ?? "").trim();
 
-    // Big Costa's public map is only returned after a valid payment ID is verified.
-    if (!isSmallCosta) {
-      const paymentId = (url.searchParams.get("paymentId") ?? "").trim();
-      if (!paymentId) {
-        return NextResponse.json({ ok: false, message: "Verify your payment ID before viewing seats." }, { status: 401 });
-      }
-      const { data: payment, error: paymentError } = await supabase
-        .from("payments")
-        .select("guest_id, event_id, is_voided, public_payment_id")
-        .ilike("public_payment_id", paymentId)
-        .maybeSingle();
-      if (paymentError || !payment || payment.is_voided || !payment.guest_id || !payment.event_id) {
-        return NextResponse.json({ ok: false, message: "Invalid payment ID." }, { status: 403 });
-      }
-      const { data: validPayments, error: validPaymentsError } = await supabase
-        .from("payments")
-        .select("amount")
-        .eq("guest_id", payment.guest_id)
-        .eq("event_id", payment.event_id)
-        .eq("is_voided", false);
-      const totalPaid = (validPayments ?? []).reduce((sum: number, row: any) => sum + Number(row.amount ?? 0), 0);
-      if (validPaymentsError || totalPaid < SEAT_ELIGIBILITY_THRESHOLD) {
-        return NextResponse.json({ ok: false, message: "You need at least ₦5,000 total valid payment before viewing seats." }, { status: 403 });
-      }
+    // Both Costa maps require a valid payment ID and an open seat-selection window.
+    if (!paymentId) {
+      return NextResponse.json(
+        { ok: false, message: "Verify your payment ID before viewing seats." },
+        { status: 401 }
+      );
+    }
+
+    const { data: payment, error: paymentError } = await supabase
+      .from("payments")
+      .select("guest_id, event_id, is_voided, public_payment_id")
+      .ilike("public_payment_id", paymentId)
+      .maybeSingle();
+
+    if (paymentError || !payment || payment.is_voided || !payment.guest_id || !payment.event_id) {
+      return NextResponse.json({ ok: false, message: "Invalid payment ID." }, { status: 403 });
+    }
+
+    const { data: validPayments, error: validPaymentsError } = await supabase
+      .from("payments")
+      .select("amount")
+      .eq("guest_id", payment.guest_id)
+      .eq("event_id", payment.event_id)
+      .eq("is_voided", false);
+
+    const totalPaid = (validPayments ?? []).reduce(
+      (sum: number, row: any) => sum + Number(row.amount ?? 0),
+      0
+    );
+
+    if (validPaymentsError || totalPaid < SEAT_ELIGIBILITY_THRESHOLD) {
+      return NextResponse.json(
+        { ok: false, message: "You need at least ₦5,000 total valid payment before viewing seats." },
+        { status: 403 }
+      );
     }
 
     let bus: any;
     if (isSmallCosta) {
-      const eventId = await getActiveEventId(supabase);
-      bus = eventId ? await getSmallCostaBus(supabase, eventId) : null;
+      bus = await getSmallCostaBus(supabase, payment.event_id);
     } else {
       bus = await getPermanentBigCostaBus(supabase);
     }
 
     if (!bus) {
       const notConfigured = isSmallCosta
-        ? "Small Costa bus not configured for the permanent seat map."
+        ? "Small Costa bus not configured for this event."
         : "Big Costa bus not configured for the permanent seat map.";
       return NextResponse.json({ ok: false, message: notConfigured }, { status: 404 });
     }
 
-    if (!bus.event_id) {
-      return NextResponse.json({ ok: false, message: "The permanent Big Costa bus is not linked to an event." }, { status: 404 });
+    if (!bus.event_id || bus.event_id !== payment.event_id) {
+      return NextResponse.json(
+        { ok: false, message: "Payment belongs to a different event." },
+        { status: 403 }
+      );
+    }
+
+    const { data: event, error: eventError } = await supabase
+      .from("events")
+      .select("id, seat_selection_open, seat_selection_deadline")
+      .eq("id", payment.event_id)
+      .maybeSingle();
+
+    if (eventError || !event) {
+      return NextResponse.json({ ok: false, message: "Unable to verify seat-selection status." }, { status: 500 });
+    }
+
+    if (!event.seat_selection_open) {
+      return NextResponse.json({ ok: false, message: "Seat selection is currently closed." }, { status: 403 });
+    }
+
+    if (event.seat_selection_deadline) {
+      const deadline = new Date(event.seat_selection_deadline);
+      if (!Number.isNaN(deadline.getTime()) && deadline.getTime() < Date.now()) {
+        return NextResponse.json({ ok: false, message: "Seat selection deadline has passed." }, { status: 403 });
+      }
     }
 
     const { data: seats, error: seatError } = await supabase
