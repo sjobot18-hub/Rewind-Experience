@@ -49,11 +49,18 @@ export default function SmallSeatsClient() {
   }
 
   async function loadSeatMap() {
-    const response = await fetch(`/api/seats/map?bus=${encodeURIComponent(SMALL_COSTA_BUS)}`, { method: "GET" });
+    const response = await fetch(
+      `/api/seats/map?bus=${encodeURIComponent(SMALL_COSTA_BUS)}&paymentId=${encodeURIComponent(paymentId.trim())}`,
+      { method: "GET", cache: "no-store", headers: { "Cache-Control": "no-cache" } }
+    );
     const json = await response.json();
-    if (json.ok) {
+    if (response.ok && json.ok) {
       setMapSeats(json.seats ?? []);
+      return;
     }
+    setMapSeats([]);
+    setError(json.message || "Unable to load the Small Costa seat map.");
+    setVerified(false);
   }
 
   function selectLocalSeat(seat: string) {
