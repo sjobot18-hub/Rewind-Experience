@@ -56,26 +56,6 @@ export default function PaymentsClient({
     router.refresh();
   }
 
-  async function generateUniquePublicPaymentId() {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      const values = new Uint32Array(1);
-      crypto.getRandomValues(values);
-      const value = 100000 + (values[0] % 900000);
-      const publicPaymentId = `PAY-${String(value).padStart(6, "0")}`;
-
-      const { data: existing, error } = await supabase
-        .from("payments")
-        .select("id")
-        .eq("public_payment_id", publicPaymentId)
-        .maybeSingle();
-
-      if (!error && !existing) {
-        return publicPaymentId;
-      }
-    }
-
-    throw new Error("Could not generate a unique public payment ID.");
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -104,19 +84,7 @@ export default function PaymentsClient({
 
     if (rpcError) { setError(rpcError.message); return; }
 
-    try {
-      const payment = data as { id?: string } | null;
-      const publicPaymentId = await generateUniquePublicPaymentId();
-      if (payment?.id) {
-        await supabase
-          .from("payments")
-          .update({ public_payment_id: publicPaymentId })
-          .eq("id", payment.id);
-      }
-    } catch (e: any) {
-      setError(e.message ?? "Could not assign public payment ID.");
-      return;
-    }
+
 
     setShowForm(false);
     setGuestId(""); setAmount(""); setNotes(""); setConfirm(false);
