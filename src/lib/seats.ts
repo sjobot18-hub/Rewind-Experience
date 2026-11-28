@@ -192,8 +192,8 @@ export function normalizePaymentId(input: string) {
 
   if (!cleaned) return { paymentCode: "", publicId: "" };
 
-  const publicId = /^(?:PAY-\d{6}|PAY-\d{4}-Y\d{4})$/.test(cleaned) ? cleaned : "";
-  const paymentCode = cleaned.replace(/-/g, "");
+  const publicId = /^PAY-\d{6}$/.test(cleaned) ? cleaned : "";
+  const paymentCode = "";
 
   return {
     paymentCode: /^PAY\d+$/.test(paymentCode) ? paymentCode : "",
