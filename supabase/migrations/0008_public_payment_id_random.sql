@@ -28,7 +28,7 @@ declare
 begin
   perform pg_advisory_xact_lock(hashtext('public.generate_public_payment_id'));
   loop
-    v_seed := gen_random_bytes(4);
+    v_seed := extensions.gen_random_bytes(4);
     v_value := (
       get_byte(v_seed, 0)::bigint * 16777216 +
       get_byte(v_seed, 1)::bigint * 65536 +
