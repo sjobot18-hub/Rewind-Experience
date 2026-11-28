@@ -150,7 +150,6 @@ export default function PaymentsClient({
             </div>
             <p className="text-sm text-slate-500">{p.guests?.full_name} ({p.guests?.guest_code})</p>
             <p className="text-xs text-slate-400">{formatDate(p.paid_at)} · {p.payment_method} · {p.receipt_number}</p>
-            <p className="text-[11px] text-slate-500 mt-1">Internal Payment Code: {p.payment_code}</p>
             {!p.is_voided && (
               <button onClick={() => handleVoid(p.id)} className="text-xs text-unpaid font-medium mt-2">Void Payment</button>
             )}
@@ -162,7 +161,6 @@ export default function PaymentsClient({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-slate-500 border-b border-slate-200">
-              <th className="py-2 pr-4">Internal Payment Code</th>
               <th className="py-2 pr-4">Public Payment ID</th>
               <th className="py-2 pr-4">Date</th>
               <th className="py-2 pr-4">Guest</th>
@@ -175,7 +173,6 @@ export default function PaymentsClient({
           <tbody>
             {payments.map((p) => (
               <tr key={p.id} className={`border-b border-slate-100 ${p.is_voided ? "opacity-40 line-through" : ""}`}>
-                <td className="py-2 pr-4">{p.payment_code}</td>
                 <td className="py-2 pr-4">{p.public_payment_id ?? "—"}</td>
                 <td className="py-2 pr-4">{formatDate(p.paid_at)}</td>
                 <td className="py-2 pr-4">{p.guests?.full_name} ({p.guests?.guest_code})</td>
