@@ -26,6 +26,7 @@ declare
   v_value bigint;
   v_public_id text;
 begin
+  perform pg_advisory_xact_lock(hashtext('public.generate_public_payment_id'));
   loop
     v_seed := gen_random_bytes(4);
     v_value := (
@@ -45,6 +46,15 @@ begin
   end loop;
 end;
 $$;
+
+-- Repair the legacy sequential internal payment counter before the next write.
+-- next_code() increments next_value and returns next_value - 1.
+insert into public.event_sequences (event_id, sequence_key, next_value)
+select event_id, 'payment', coalesce(max(nullif(regexp_replace(payment_code, '^PAY', ''), '')::integer), 0) + 1
+from public.payments
+group by event_id
+on conflict (event_id, sequence_key) do update
+set next_value = greatest(public.event_sequences.next_value, excluded.next_value);
 
 -- Replace the payment-write source of truth so every new payment writes a
 -- random public ID with the existing payment_code and receipt_number unchanged.
